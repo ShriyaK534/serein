@@ -45,6 +45,7 @@ export const storage = {
 
   updateUser: async (user: User) => {
     try {
+      // 1. Update the primary user document first
       await updateDoc(doc(db, 'users', user.id), { ...user });
       
       // Update local current user if applicable
@@ -53,27 +54,25 @@ export const storage = {
         storage.setCurrentUser(user);
       }
 
-      // Denormalized update: Update username/avatar in all posts by this user
-      const postsQuery = query(collection(db, 'posts'), where('userId', '==', user.id));
-      const postsSnap = await getDocs(postsQuery);
-      const postUpdates = postsSnap.docs.map(d => 
-        updateDoc(doc(db, 'posts', d.id), { 
-          username: user.username, 
-          avatarUrl: user.avatarUrl || null 
-        })
-      );
-      await Promise.all(postUpdates);
+      // 2. Attempt denormalized updates (non-blocking)
+      // We wrap this in a separate try/catch because it might fail due to missing indexes
+      // or large numbers of documents, and we don't want to block the profile save.
+      try {
+        const postsQuery = query(collection(db, 'posts'), where('userId', '==', user.id));
+        const postsSnap = await getDocs(postsQuery);
+        if (!postsSnap.empty) {
+          const postUpdates = postsSnap.docs.map(d => 
+            updateDoc(doc(db, 'posts', d.id), { 
+              username: user.username, 
+              avatarUrl: user.avatarUrl || null 
+            })
+          );
+          await Promise.all(postUpdates);
+        }
+      } catch (postErr) {
+        console.warn("Could not update username on old posts:", postErr);
+      }
 
-      // Denormalized update: Update username/avatar in all reflections by this user
-      const reflectionsQuery = query(collectionGroup(db, 'reflections'), where('userId', '==', user.id));
-      const reflectionsSnap = await getDocs(reflectionsQuery);
-      const reflectionUpdates = reflectionsSnap.docs.map(d => 
-        updateDoc(d.ref, { 
-          username: user.username, 
-          avatarUrl: user.avatarUrl || null 
-        })
-      );
-      await Promise.all(reflectionUpdates);
     } catch (e) {
       handleFirestoreError(e, OperationType.UPDATE, `users/${user.id}`);
     }
