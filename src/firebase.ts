@@ -1,7 +1,22 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut } from 'firebase/auth';
 import { getFirestore, doc, getDocFromServer } from 'firebase/firestore';
-import firebaseConfig from '../firebase-applet-config.json';
+import firebaseAppletConfig from '../firebase-applet-config.json';
+
+// Support VITE_FIREBASE_CONFIG environment variable for external deployment
+const getFirebaseConfig = () => {
+  const envConfig = import.meta.env.VITE_FIREBASE_CONFIG;
+  if (envConfig) {
+    try {
+      return JSON.parse(envConfig);
+    } catch (e) {
+      console.error('Failed to parse VITE_FIREBASE_CONFIG environment variable:', e);
+    }
+  }
+  return firebaseAppletConfig;
+};
+
+const firebaseConfig = getFirebaseConfig();
 
 // Initialize Firebase SDK
 const app = initializeApp(firebaseConfig);

@@ -1,5 +1,6 @@
 import { 
   collection, 
+  collectionGroup,
   doc, 
   setDoc, 
   getDoc, 
@@ -51,6 +52,28 @@ export const storage = {
       if (currentUser && currentUser.id === user.id) {
         storage.setCurrentUser(user);
       }
+
+      // Denormalized update: Update username/avatar in all posts by this user
+      const postsQuery = query(collection(db, 'posts'), where('userId', '==', user.id));
+      const postsSnap = await getDocs(postsQuery);
+      const postUpdates = postsSnap.docs.map(d => 
+        updateDoc(doc(db, 'posts', d.id), { 
+          username: user.username, 
+          avatarUrl: user.avatarUrl || null 
+        })
+      );
+      await Promise.all(postUpdates);
+
+      // Denormalized update: Update username/avatar in all reflections by this user
+      const reflectionsQuery = query(collectionGroup(db, 'reflections'), where('userId', '==', user.id));
+      const reflectionsSnap = await getDocs(reflectionsQuery);
+      const reflectionUpdates = reflectionsSnap.docs.map(d => 
+        updateDoc(d.ref, { 
+          username: user.username, 
+          avatarUrl: user.avatarUrl || null 
+        })
+      );
+      await Promise.all(reflectionUpdates);
     } catch (e) {
       handleFirestoreError(e, OperationType.UPDATE, `users/${user.id}`);
     }
