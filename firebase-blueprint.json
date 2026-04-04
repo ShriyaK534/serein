@@ -1,0 +1,99 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "A user of the Serein sanctuary.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "username": { "type": "string" },
+        "bio": { "type": "string" },
+        "avatarUrl": { "type": "string" },
+        "joinDate": { "type": "number" },
+        "following": { "type": "array", "items": { "type": "string" } }
+      },
+      "required": ["id", "username", "joinDate"]
+    },
+    "Post": {
+      "title": "Post",
+      "description": "An expression shared in the sanctuary.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "username": { "type": "string" },
+        "avatarUrl": { "type": "string" },
+        "isAnonymous": { "type": "boolean" },
+        "content": { "type": "string" },
+        "category": { "type": "string" },
+        "createdAt": { "type": "number" },
+        "type": { "type": "string", "enum": ["poem", "quote", "thought"] }
+      },
+      "required": ["id", "userId", "username", "isAnonymous", "content", "category", "createdAt", "type"]
+    },
+    "Reflection": {
+      "title": "Reflection",
+      "description": "An echo or response to a post.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "postId": { "type": "string" },
+        "userId": { "type": "string" },
+        "username": { "type": "string" },
+        "avatarUrl": { "type": "string" },
+        "content": { "type": "string" },
+        "createdAt": { "type": "number" },
+        "parentId": { "type": "string" }
+      },
+      "required": ["id", "postId", "userId", "username", "content", "createdAt"]
+    },
+    "Reaction": {
+      "title": "Reaction",
+      "description": "A visceral response to an expression.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "postId": { "type": "string" },
+        "userId": { "type": "string" },
+        "type": { "type": "string", "enum": ["felt", "heavy", "beautiful", "haunting"] }
+      },
+      "required": ["id", "postId", "userId", "type"]
+    },
+    "Message": {
+      "title": "Message",
+      "description": "A private whisper between souls.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "senderId": { "type": "string" },
+        "receiverId": { "type": "string" },
+        "content": { "type": "string" },
+        "createdAt": { "type": "number" },
+        "isRead": { "type": "boolean" }
+      },
+      "required": ["id", "senderId", "receiverId", "content", "createdAt", "isRead"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profiles."
+    },
+    "/posts/{postId}": {
+      "schema": "Post",
+      "description": "Shared expressions."
+    },
+    "/posts/{postId}/reflections/{reflectionId}": {
+      "schema": "Reflection",
+      "description": "Echoes on a post."
+    },
+    "/posts/{postId}/reactions/{reactionId}": {
+      "schema": "Reaction",
+      "description": "Reactions to a post."
+    },
+    "/messages/{messageId}": {
+      "schema": "Message",
+      "description": "Private whispers."
+    }
+  }
+}

@@ -1,0 +1,174 @@
+// ===============================================================
+// Assumed Data Model
+// ===============================================================
+//
+// Collection: users
+// Document ID: userId
+// Fields:
+//   - id: string (required)
+//   - username: string (required)
+//   - bio: string (optional)
+//   - avatarUrl: string (optional)
+//   - joinDate: number (required)
+//   - following: list (optional)
+//
+// Collection: posts
+// Document ID: postId
+// Fields:
+//   - id: string (required)
+//   - userId: string (required)
+//   - username: string (required)
+//   - avatarUrl: string (optional)
+//   - isAnonymous: bool (required)
+//   - content: string (required)
+//   - category: string (required)
+//   - createdAt: number (required)
+//   - type: string (required, ['poem', 'quote', 'thought'])
+//
+// Subcollection: posts/{postId}/reflections
+// Document ID: reflectionId
+// Fields:
+//   - id: string (required)
+//   - postId: string (required)
+//   - userId: string (required)
+//   - username: string (required)
+//   - avatarUrl: string (optional)
+//   - content: string (required)
+//   - createdAt: number (required)
+//   - parentId: string (optional)
+//
+// Subcollection: posts/{postId}/reactions
+// Document ID: reactionId
+// Fields:
+//   - id: string (required)
+//   - postId: string (required)
+//   - userId: string (required)
+//   - type: string (required, ['felt', 'heavy', 'beautiful', 'haunting'])
+//
+// Collection: messages
+// Document ID: messageId
+// Fields:
+//   - id: string (required)
+//   - senderId: string (required)
+//   - receiverId: string (required)
+//   - content: string (required)
+//   - createdAt: number (required)
+//   - isRead: bool (required)
+//
+// ===============================================================
+
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+    
+    function isDocOwner() {
+      return isAuthenticated() && request.auth.uid == resource.data.userId;
+    }
+
+    function isMessageParticipant() {
+      return isAuthenticated() && (request.auth.uid == resource.data.senderId || request.auth.uid == resource.data.receiverId);
+    }
+
+    function hasRequiredFields(fields) {
+      return request.resource.data.keys().hasAll(fields);
+    }
+
+    function hasOnlyAllowedFields(fields) {
+      return request.resource.data.keys().hasOnly(fields);
+    }
+
+    function isValidString(field, min, max) {
+      return request.resource.data[field] is string && 
+             request.resource.data[field].size() >= min && 
+             request.resource.data[field].size() <= max;
+    }
+
+    // ===============================================================
+    // Domain Validators
+    // ===============================================================
+
+    function isValidUser(data) {
+      return hasRequiredFields(['id', 'username', 'joinDate']) &&
+             data.id == request.auth.uid &&
+             data.username is string && data.username.size() > 0 && data.username.size() < 50 &&
+             data.joinDate is number;
+    }
+
+    function isValidPost(data) {
+      return hasRequiredFields(['id', 'userId', 'username', 'isAnonymous', 'content', 'category', 'createdAt', 'type']) &&
+             data.userId == request.auth.uid &&
+             data.content is string && data.content.size() > 0 && data.content.size() < 5000 &&
+             data.type in ['poem', 'quote', 'thought'];
+    }
+
+    function isValidReflection(data) {
+      return hasRequiredFields(['id', 'postId', 'userId', 'username', 'content', 'createdAt']) &&
+             data.userId == request.auth.uid &&
+             data.content is string && data.content.size() > 0 && data.content.size() < 1000;
+    }
+
+    function isValidReaction(data) {
+      return hasRequiredFields(['id', 'postId', 'userId', 'type']) &&
+             data.userId == request.auth.uid &&
+             data.type in ['felt', 'heavy', 'beautiful', 'haunting'];
+    }
+
+    function isValidMessage(data) {
+      return hasRequiredFields(['id', 'senderId', 'receiverId', 'content', 'createdAt', 'isRead']) &&
+             data.senderId == request.auth.uid &&
+             data.content is string && data.content.size() > 0 && data.content.size() < 2000;
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /users/{userId} {
+      allow read: if true;
+      allow create: if isOwner(userId) && isValidUser(request.resource.data);
+      allow update: if isOwner(userId) && isValidUser(request.resource.data);
+    }
+
+    match /posts/{postId} {
+      allow read: if true;
+      allow create: if isAuthenticated() && isValidPost(request.resource.data);
+      allow update: if isDocOwner() && isValidPost(request.resource.data);
+      allow delete: if isDocOwner();
+
+      match /reflections/{reflectionId} {
+        allow read: if true;
+        allow create: if isAuthenticated() && isValidReflection(request.resource.data);
+        allow delete: if isAuthenticated() && (request.auth.uid == resource.data.userId || get(/databases/$(database)/documents/posts/$(postId)).data.userId == request.auth.uid);
+      }
+
+      match /reactions/{reactionId} {
+        allow read: if true;
+        allow create: if isAuthenticated() && isValidReaction(request.resource.data);
+        allow delete: if isAuthenticated() && request.auth.uid == resource.data.userId;
+      }
+    }
+
+    match /messages/{messageId} {
+      allow read: if true;
+      allow create: if isAuthenticated() && isValidMessage(request.resource.data);
+      allow update: if isMessageParticipant() && hasOnlyAllowedFields(['id', 'senderId', 'receiverId', 'content', 'createdAt', 'isRead']) && (request.resource.data.isRead == true);
+    }
+
+    // Default deny
+    match /{path=**} {
+      allow read, write: if false;
+    }
+  }
+}
