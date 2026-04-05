@@ -87,6 +87,74 @@ export const storage = {
   },
   setCurrentUser: (user: User | null) => localStorage.setItem(STORAGE_KEYS.CURRENT_USER, JSON.stringify(user)),
 
+  // --- Social Operations ---
+  followUser: async (followerId: string, followedId: string) => {
+    try {
+      const followerRef = doc(db, 'users', followerId);
+      const followedRef = doc(db, 'users', followedId);
+      
+      const followerSnap = await getDoc(followerRef);
+      if (followerSnap.exists()) {
+        const following = followerSnap.data().following || [];
+        if (!following.includes(followedId)) {
+          await updateDoc(followerRef, { following: [...following, followedId] });
+        }
+      }
+
+      const followedSnap = await getDoc(followedRef);
+      if (followedSnap.exists()) {
+        const followers = followedSnap.data().followers || [];
+        if (!followers.includes(followerId)) {
+          await updateDoc(followedRef, { followers: [...followers, followerId] });
+        }
+      }
+    } catch (e) {
+      handleFirestoreError(e, OperationType.UPDATE, `users/${followerId}/follow`);
+    }
+  },
+
+  unfollowUser: async (followerId: string, followedId: string) => {
+    try {
+      const followerRef = doc(db, 'users', followerId);
+      const followedRef = doc(db, 'users', followedId);
+      
+      const followerSnap = await getDoc(followerRef);
+      if (followerSnap.exists()) {
+        const following = followerSnap.data().following || [];
+        await updateDoc(followerRef, { following: following.filter((id: string) => id !== followedId) });
+      }
+
+      const followedSnap = await getDoc(followedRef);
+      if (followedSnap.exists()) {
+        const followers = followedSnap.data().followers || [];
+        await updateDoc(followedRef, { followers: followers.filter((id: string) => id !== followerId) });
+      }
+    } catch (e) {
+      handleFirestoreError(e, OperationType.UPDATE, `users/${followerId}/unfollow`);
+    }
+  },
+
+  toggleSavePost: async (userId: string, postId: string) => {
+    try {
+      const userRef = doc(db, 'users', userId);
+      const userSnap = await getDoc(userRef);
+      if (userSnap.exists()) {
+        const savedPosts = userSnap.data().savedPosts || [];
+        const isSaved = savedPosts.includes(postId);
+        await updateDoc(userRef, {
+          savedPosts: isSaved 
+            ? savedPosts.filter((id: string) => id !== postId)
+            : [...savedPosts, postId]
+        });
+        return !isSaved;
+      }
+      return false;
+    } catch (e) {
+      handleFirestoreError(e, OperationType.UPDATE, `users/${userId}/savePost`);
+      return false;
+    }
+  },
+
   // --- Post Operations ---
   savePost: async (post: Post) => {
     try {

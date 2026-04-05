@@ -26,6 +26,8 @@ export interface User {
   avatarUrl?: string;
   joinDate: number;
   following?: string[];
+  followers?: string[];
+  savedPosts?: string[];
 }
 
 export interface Post {

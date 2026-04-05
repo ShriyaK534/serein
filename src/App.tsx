@@ -26,15 +26,15 @@ import {
   Settings,
   Home,
   MessageCircle,
-  Search,
   Bookmark,
+  Search,
   TrendingUp,
+  Award,
   Users,
-  Clock,
-  Zap,
+  Mail,
+  Lock,
   Eye,
-  EyeOff,
-  Filter
+  EyeOff
 } from 'lucide-react';
 import { storage } from './services/storage';
 import { Post, Reflection, Reaction, User, Category, CATEGORIES, THEMES, Draft, Message } from './types';
@@ -42,10 +42,14 @@ import { auth, db, googleProvider, handleFirestoreError, OperationType } from '.
 import { 
   onAuthStateChanged, 
   signInWithPopup, 
-  signOut 
+  signOut,
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
+  updateProfile
 } from 'firebase/auth';
 import { 
   collection, 
+  collectionGroup,
   onSnapshot, 
   query, 
   orderBy, 
@@ -112,9 +116,17 @@ class ErrorBoundary extends Component<any, any> {
 
 const AuthModal = ({ onLogin }: { onLogin: (user: User) => void }) => {
   const [isSigningIn, setIsSigningIn] = useState(false);
+  const [step, setStep] = useState<'login' | 'signup' | 'setup'>('login');
+  const [tempUser, setTempUser] = useState<User | null>(null);
+  const [username, setUsername] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const handleGoogleSignIn = async () => {
     setIsSigningIn(true);
+    setError(null);
     try {
       const result = await signInWithPopup(auth, googleProvider);
       const firebaseUser = result.user;
@@ -129,14 +141,68 @@ const AuthModal = ({ onLogin }: { onLogin: (user: User) => void }) => {
           username: firebaseUser.displayName || `Soul_${firebaseUser.uid.slice(0, 5)}`,
           avatarUrl: firebaseUser.photoURL || `https://api.dicebear.com/7.x/bottts-neutral/svg?seed=${firebaseUser.uid}`,
           joinDate: Date.now(),
-          following: []
+          following: [],
+          followers: [],
+          savedPosts: []
         };
-        await storage.saveUser(newUser);
-        storage.setCurrentUser(newUser);
-        onLogin(newUser);
+        setTempUser(newUser);
+        setUsername(newUser.username);
+        setStep('setup');
       }
+    } catch (error: any) {
+      setError(error.message);
+    } finally {
+      setIsSigningIn(false);
+    }
+  };
+
+  const handleEmailAuth = async () => {
+    if (!email || !password) return;
+    setIsSigningIn(true);
+    setError(null);
+    try {
+      if (step === 'login') {
+        const result = await signInWithEmailAndPassword(auth, email, password);
+        const userDoc = await storage.getUserById(result.user.uid);
+        if (userDoc) {
+          storage.setCurrentUser(userDoc);
+          onLogin(userDoc);
+        } else {
+          // Should not happen usually, but handle just in case
+          setStep('setup');
+        }
+      } else {
+        const result = await createUserWithEmailAndPassword(auth, email, password);
+        const newUser: User = {
+          id: result.user.uid,
+          username: `Soul_${result.user.uid.slice(0, 5)}`,
+          avatarUrl: `https://api.dicebear.com/7.x/bottts-neutral/svg?seed=${result.user.uid}`,
+          joinDate: Date.now(),
+          following: [],
+          followers: [],
+          savedPosts: []
+        };
+        setTempUser(newUser);
+        setUsername(newUser.username);
+        setStep('setup');
+      }
+    } catch (error: any) {
+      setError(error.message);
+    } finally {
+      setIsSigningIn(false);
+    }
+  };
+
+  const handleCompleteSetup = async () => {
+    if (!tempUser || !username.trim()) return;
+    setIsSigningIn(true);
+    try {
+      const finalUser = { ...tempUser, username: username.trim() };
+      await storage.saveUser(finalUser);
+      storage.setCurrentUser(finalUser);
+      onLogin(finalUser);
     } catch (error) {
-      console.error("Sign in error:", error);
+      console.error("Setup error:", error);
     } finally {
       setIsSigningIn(false);
     }
@@ -151,27 +217,107 @@ const AuthModal = ({ onLogin }: { onLogin: (user: User) => void }) => {
       <motion.div 
         initial={{ y: 20, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
-        className="bg-[#121212] border border-white/10 p-10 rounded-3xl w-full max-w-md text-center"
+        className="bg-[#121212] border border-white/10 p-8 md:p-10 rounded-[2.5rem] w-full max-w-md text-center"
       >
         <div className="flex justify-center mb-6">
           <div className="w-16 h-16 rounded-full bg-white/5 border border-white/10 flex items-center justify-center">
             <Feather size={32} className="text-white/40" />
           </div>
         </div>
-        <h2 className="text-3xl font-serif mb-3">Enter Serein</h2>
-        <p className="text-white/40 mb-10 text-sm leading-relaxed">
-          A quiet space for your thoughts, shared in the soft light of the sanctuary.
-        </p>
-        
-        <button 
-          onClick={handleGoogleSignIn}
-          disabled={isSigningIn}
-          className="w-full bg-white text-black py-4 rounded-2xl font-medium hover:bg-gray-200 transition-all flex items-center justify-center gap-3 disabled:opacity-50"
-        >
-          {isSigningIn ? (
-            <div className="w-5 h-5 border-2 border-black/20 border-t-black rounded-full animate-spin" />
-          ) : (
-            <>
+
+        {step === 'setup' ? (
+          <>
+            <h2 className="text-2xl font-serif mb-3">Choose Your Name</h2>
+            <p className="text-white/40 mb-8 text-sm leading-relaxed">
+              How should your soul be known in the sanctuary?
+            </p>
+            
+            <div className="mb-8">
+              <input 
+                type="text" 
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                className="w-full bg-white/5 border border-white/10 rounded-2xl p-4 text-center text-lg focus:outline-none focus:border-white/30"
+                placeholder="Your sanctuary name..."
+                autoFocus
+              />
+            </div>
+
+            <button 
+              onClick={handleCompleteSetup}
+              disabled={isSigningIn || !username.trim()}
+              className="w-full bg-white text-black py-4 rounded-2xl font-medium hover:bg-gray-200 transition-all disabled:opacity-50"
+            >
+              {isSigningIn ? 'Entering...' : 'Begin Journey'}
+            </button>
+          </>
+        ) : (
+          <>
+            <h2 className="text-3xl font-serif mb-3">
+              {step === 'login' ? 'Enter Serein' : 'Join the Sanctuary'}
+            </h2>
+            <p className="text-white/40 mb-8 text-sm leading-relaxed">
+              A quiet space for your thoughts, shared in the soft light of the sanctuary.
+            </p>
+
+            {error && (
+              <div className="mb-6 p-3 bg-red-500/10 border border-red-500/20 rounded-xl text-red-400 text-[10px] uppercase tracking-widest">
+                {error}
+              </div>
+            )}
+            
+            <div className="space-y-4 mb-6">
+              <div className="relative">
+                <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-white/20" size={18} />
+                <input 
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="Email address"
+                  className="w-full bg-white/5 border border-white/10 rounded-2xl py-4 pl-12 pr-4 text-sm focus:outline-none focus:border-white/30 transition-all"
+                />
+              </div>
+              <div className="relative">
+                <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-white/20" size={18} />
+                <input 
+                  type={showPassword ? "text" : "password"}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="Password"
+                  className="w-full bg-white/5 border border-white/10 rounded-2xl py-4 pl-12 pr-12 text-sm focus:outline-none focus:border-white/30 transition-all"
+                />
+                <button 
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-4 top-1/2 -translate-y-1/2 text-white/20 hover:text-white/40 transition-colors"
+                >
+                  {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                </button>
+              </div>
+            </div>
+
+            <button 
+              onClick={handleEmailAuth}
+              disabled={isSigningIn || !email || !password}
+              className="w-full bg-white text-black py-4 rounded-2xl font-medium hover:bg-gray-200 transition-all flex items-center justify-center gap-3 disabled:opacity-50 mb-4"
+            >
+              {isSigningIn ? (
+                <div className="w-5 h-5 border-2 border-black/20 border-t-black rounded-full animate-spin" />
+              ) : (
+                <span>{step === 'login' ? 'Sign In' : 'Create Account'}</span>
+              )}
+            </button>
+
+            <div className="flex items-center gap-4 mb-6 opacity-20">
+              <div className="h-px flex-1 bg-white" />
+              <span className="text-[10px] uppercase tracking-widest">or</span>
+              <div className="h-px flex-1 bg-white" />
+            </div>
+
+            <button 
+              onClick={handleGoogleSignIn}
+              disabled={isSigningIn}
+              className="w-full bg-white/5 border border-white/10 text-white py-4 rounded-2xl font-medium hover:bg-white/10 transition-all flex items-center justify-center gap-3 disabled:opacity-50"
+            >
               <svg className="w-5 h-5" viewBox="0 0 24 24">
                 <path fill="currentColor" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
                 <path fill="currentColor" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
@@ -179,9 +325,16 @@ const AuthModal = ({ onLogin }: { onLogin: (user: User) => void }) => {
                 <path fill="currentColor" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
               </svg>
               <span>Continue with Google</span>
-            </>
-          )}
-        </button>
+            </button>
+
+            <button 
+              onClick={() => setStep(step === 'login' ? 'signup' : 'login')}
+              className="mt-8 text-[10px] uppercase tracking-widest text-white/30 hover:text-white transition-colors"
+            >
+              {step === 'login' ? "Don't have an account? Join us" : "Already a soul here? Sign in"}
+            </button>
+          </>
+        )}
         
         <p className="mt-8 text-[10px] uppercase tracking-widest text-white/20">
           By entering, you agree to the silence of the sanctuary.
@@ -211,8 +364,6 @@ const WritingMode = ({
   const [showDrafts, setShowDrafts] = useState(false);
   const [drafts, setDrafts] = useState<Draft[]>([]);
 
-  const wordCount = content.trim() ? content.trim().split(/\s+/).length : 0;
-
   useEffect(() => {
     if (currentUser && type === 'post') {
       setDrafts(storage.getDrafts(currentUser.id));
@@ -223,6 +374,7 @@ const WritingMode = ({
     if (!content.trim()) return;
     onPost(content, category, isAnonymous, postType);
     if (currentUser && !initialData) {
+      // If it was a draft, delete it after posting
       const existingDraft = drafts.find(d => d.content === content);
       if (existingDraft) storage.deleteDraft(existingDraft.id);
     }
@@ -259,8 +411,8 @@ const WritingMode = ({
       exit={{ opacity: 0 }}
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/95 p-4"
     >
-      <button onClick={onClose} className="absolute top-8 right-8 text-gray-500 hover:text-white transition-colors">
-        <X size={32} />
+      <button onClick={onClose} className="absolute top-4 right-4 md:top-8 md:right-8 text-gray-500 hover:text-white transition-colors">
+        <X size={24} className="md:w-8 md:h-8" />
       </button>
       
       <motion.div 
@@ -268,7 +420,7 @@ const WritingMode = ({
         animate={{ scale: 1, opacity: 1 }}
         className="w-full max-w-3xl"
       >
-        <div className="mb-8 flex flex-wrap gap-4 items-center justify-between">
+        <div className="mb-6 md:mb-8 flex flex-wrap gap-4 items-center justify-between">
           {type === 'post' && (
             <div className="flex gap-2">
               {(['poem', 'quote', 'thought'] as const).map(t => (
@@ -311,7 +463,7 @@ const WritingMode = ({
         />
 
         <div className="mt-8 flex justify-between items-center">
-          <div className="flex gap-4 items-center">
+          <div className="flex gap-4">
             {type === 'post' && currentUser && (
               <>
                 <button 
@@ -331,12 +483,6 @@ const WritingMode = ({
                   </button>
                 )}
               </>
-            )}
-            {wordCount > 0 && (
-              <span className="text-[9px] uppercase tracking-widest text-white/15 flex items-center gap-1">
-                <Clock size={10} />
-                {wordCount}w
-              </span>
             )}
           </div>
           <button 
@@ -402,19 +548,24 @@ const ProfileView = ({
 }) => {
   const [profileUser, setProfileUser] = useState<User | null>(null);
   const [userPosts, setUserPosts] = useState<Post[]>([]);
-  const [isEditingBio, setIsEditingBio] = useState(false);
+  const [isEditingProfile, setIsEditingProfile] = useState(false);
+  const [username, setUsername] = useState('');
   const [bio, setBio] = useState('');
   const [avatarUrl, setAvatarUrl] = useState('');
   const [isFollowing, setIsFollowing] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchProfile = async () => {
       const u = await storage.getUserById(userId);
       if (u) {
         setProfileUser(u);
+        setUsername(u.username || '');
         setBio(u.bio || '');
         setAvatarUrl(u.avatarUrl || '');
         
+        // Fetch user posts
         const postsQuery = query(
           collection(db, 'posts'), 
           where('userId', '==', userId),
@@ -454,10 +605,25 @@ const ProfileView = ({
 
   const handleSaveProfile = async () => {
     if (!profileUser) return;
-    const updatedUser = { ...profileUser, bio, avatarUrl };
-    await storage.updateUser(updatedUser);
-    setProfileUser(updatedUser);
-    setIsEditingBio(false);
+    if (!username.trim()) {
+      setError("A soul must have a name.");
+      return;
+    }
+    
+    setIsSaving(true);
+    setError(null);
+    
+    try {
+      const updatedUser = { ...profileUser, username: username.trim(), bio, avatarUrl };
+      await storage.updateUser(updatedUser);
+      setProfileUser(updatedUser);
+      onUpdateUser(updatedUser);
+      setIsEditingProfile(false);
+    } catch (err) {
+      setError("The sanctuary could not save your identity.");
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   if (!profileUser) return null;
@@ -469,32 +635,32 @@ const ProfileView = ({
       exit={{ opacity: 0 }}
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-md p-4"
     >
-      <button onClick={onClose} className="absolute top-8 right-8 text-gray-500 hover:text-white transition-colors">
-        <X size={32} />
+      <button onClick={onClose} className="absolute top-4 right-4 md:top-8 md:right-8 text-gray-500 hover:text-white transition-colors">
+        <X size={24} className="md:w-8 md:h-8" />
       </button>
-
+ 
       <motion.div 
         initial={{ y: 20, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
-        className="w-full max-w-2xl bg-[#121212] border border-white/10 rounded-2xl p-8 max-h-[80vh] overflow-y-auto"
+        className="w-full max-w-2xl bg-[#121212] border border-white/10 rounded-2xl p-6 md:p-8 max-h-[90vh] overflow-y-auto"
       >
-        <div className="flex items-center gap-6 mb-8">
-          <div className="w-20 h-20 rounded-full bg-white/5 flex items-center justify-center border border-white/10 overflow-hidden">
+        <div className="flex flex-col sm:flex-row items-center gap-6 mb-8 text-center sm:text-left">
+          <div className="w-20 h-20 rounded-full bg-white/5 flex items-center justify-center border border-white/10 overflow-hidden shrink-0">
             {profileUser.avatarUrl ? (
               <img src={profileUser.avatarUrl} alt={profileUser.username} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
             ) : (
               <UserIcon size={40} className="text-white/20" />
             )}
           </div>
-          <div>
-            <h2 className="text-3xl font-serif">{profileUser.username}</h2>
-            <p className="text-xs uppercase tracking-widest text-white/30 mt-1">
+          <div className="flex-1">
+            <h2 className="text-2xl md:text-3xl font-serif">{profileUser.username}</h2>
+            <p className="text-[10px] uppercase tracking-widest text-white/30 mt-1">
               Joined {new Date(profileUser.joinDate).toLocaleDateString()}
             </p>
           </div>
           
           {currentUser && currentUser.id !== userId && (
-            <div className="ml-auto flex gap-3">
+            <div className="flex gap-3">
               <button 
                 onClick={handleFollow}
                 className={`px-6 py-2 rounded-full text-[10px] uppercase tracking-widest transition-all ${isFollowing ? 'bg-white/10 border border-white/20 text-white' : 'bg-white text-black hover:bg-white/90'}`}
@@ -514,13 +680,24 @@ const ProfileView = ({
         <div className="mb-12">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-xs uppercase tracking-widest text-white/50">Soul Identity</h3>
-            {currentUser?.id === userId && !isEditingBio && (
-              <button onClick={() => setIsEditingBio(true)} className="text-[10px] uppercase tracking-widest hover:text-white transition-colors">Edit</button>
+            {currentUser?.id === userId && !isEditingProfile && (
+              <button onClick={() => setIsEditingProfile(true)} className="text-[10px] uppercase tracking-widest hover:text-white transition-colors">Edit Identity</button>
             )}
           </div>
           
-          {isEditingBio ? (
+          {isEditingProfile ? (
             <div className="space-y-4">
+              {error && <p className="text-red-400 text-[10px] uppercase tracking-widest">{error}</p>}
+              <div>
+                <label className="block text-[10px] uppercase tracking-widest text-white/30 mb-2">Username</label>
+                <input 
+                  type="text" 
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  className="w-full bg-white/5 border border-white/10 rounded-lg p-3 text-sm focus:outline-none focus:border-white/30"
+                  placeholder="Your sanctuary name..."
+                />
+              </div>
               <div>
                 <label className="block text-[10px] uppercase tracking-widest text-white/30 mb-2">Avatar URL</label>
                 <input 
@@ -541,8 +718,26 @@ const ProfileView = ({
                 />
               </div>
               <div className="flex justify-end gap-4">
-                <button onClick={() => setIsEditingBio(false)} className="text-xs uppercase tracking-widest text-white/30 hover:text-white">Cancel</button>
-                <button onClick={handleSaveProfile} className="text-xs uppercase tracking-widest bg-white text-black px-4 py-2 rounded-full">Save</button>
+                <button 
+                  onClick={() => {
+                    setIsEditingProfile(false);
+                    setUsername(profileUser.username);
+                    setBio(profileUser.bio || '');
+                    setAvatarUrl(profileUser.avatarUrl || '');
+                    setError(null);
+                  }} 
+                  className="text-xs uppercase tracking-widest text-white/30 hover:text-white"
+                  disabled={isSaving}
+                >
+                  Cancel
+                </button>
+                <button 
+                  onClick={handleSaveProfile} 
+                  disabled={isSaving}
+                  className="text-xs uppercase tracking-widest bg-white text-black px-4 py-2 rounded-full disabled:opacity-50"
+                >
+                  {isSaving ? 'Saving...' : 'Save'}
+                </button>
               </div>
             </div>
           ) : (
@@ -684,9 +879,6 @@ const SanctuaryInsights = ({
   );
 };
 
-// --- Helpers ---
-const readingTime = (content: string) => Math.max(1, Math.ceil(content.trim().split(/\s+/).length / 200));
-
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [posts, setPosts] = useState<Post[]>([]);
@@ -708,82 +900,78 @@ export default function App() {
   const [ripple, setRipple] = useState<{ x: number, y: number } | null>(null);
   const [isLoaded, setIsLoaded] = useState(false);
   const [openReflectionPostId, setOpenReflectionPostId] = useState<string | null>(null);
-
-  // --- New Feature State ---
+  const [expandedPostId, setExpandedPostId] = useState<string | null>(null);
   const [isZenMode, setIsZenMode] = useState(false);
-  const [bookmarks, setBookmarks] = useState<string[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [showSearch, setShowSearch] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
-  // Load bookmarks from localStorage when user logs in
-  useEffect(() => {
-    if (user) {
-      try {
-        const saved = JSON.parse(localStorage.getItem(`serein_bookmarks_${user.id}`) || '[]');
-        setBookmarks(saved);
-      } catch {
-        setBookmarks([]);
-      }
-    } else {
-      setBookmarks([]);
-    }
-  }, [user?.id]);
-
-  // Focus search input when opened
-  useEffect(() => {
-    if (showSearch && searchInputRef.current) {
-      searchInputRef.current.focus();
-    }
-  }, [showSearch]);
-
-  const toggleBookmark = (postId: string) => {
-    if (!user) return;
-    const updated = bookmarks.includes(postId)
-      ? bookmarks.filter(id => id !== postId)
-      : [...bookmarks, postId];
-    setBookmarks(updated);
-    localStorage.setItem(`serein_bookmarks_${user.id}`, JSON.stringify(updated));
-  };
+  const mostFeltPost = useMemo(() => {
+    return [...posts].sort((a, b) => {
+      const aCount = reactions.filter(r => r.postId === a.id).length;
+      const bCount = reactions.filter(r => r.postId === b.id).length;
+      return bCount - aCount;
+    })[0] || null;
+  }, [posts, reactions]);
 
   const filteredPosts = useMemo(() => {
     if (!selectedCategory) return posts;
     return posts.filter(p => p.category === selectedCategory);
   }, [posts, selectedCategory]);
 
-  // Search filters on top of category filter
   const searchedPosts = useMemo(() => {
-    if (!searchQuery.trim()) return filteredPosts;
-    const q = searchQuery.toLowerCase();
-    return filteredPosts.filter(p =>
-      p.content.toLowerCase().includes(q) ||
-      (!p.isAnonymous && p.username.toLowerCase().includes(q)) ||
-      p.category.toLowerCase().includes(q) ||
-      p.type.toLowerCase().includes(q)
-    );
+    let result = filteredPosts;
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      result = result.filter(p => 
+        p.content.toLowerCase().includes(q) || 
+        p.category.toLowerCase().includes(q) ||
+        (!p.isAnonymous && p.username.toLowerCase().includes(q))
+      );
+    }
+    return result;
   }, [filteredPosts, searchQuery]);
 
-  const bookmarkedPosts = useMemo(() => posts.filter(p => bookmarks.includes(p.id)), [posts, bookmarks]);
+  const suggestedSouls = useMemo(() => {
+    if (!user) return allUsers.slice(0, 3);
+    return allUsers
+      .filter(u => u.id !== user.id && !user.following?.includes(u.id))
+      .slice(0, 3);
+  }, [allUsers, user]);
 
-  const trendingCategories = useMemo(() => {
-    const counts: Record<string, number> = {};
-    posts.forEach(p => { counts[p.category] = (counts[p.category] || 0) + 1; });
-    return Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 5);
-  }, [posts]);
+  const handleFollow = async (targetUserId: string) => {
+    if (!user) return;
+    const isFollowing = user.following?.includes(targetUserId);
+    if (isFollowing) {
+      await storage.unfollowUser(user.id, targetUserId);
+    } else {
+      await storage.followUser(user.id, targetUserId);
+    }
+    const updatedUser = await storage.getUserById(user.id);
+    if (updatedUser) {
+      setUser(updatedUser);
+      storage.setCurrentUser(updatedUser);
+    }
+  };
 
-  const categoryPostCounts = useMemo(() => {
-    const counts: Record<string, number> = {};
-    posts.forEach(p => { counts[p.category] = (counts[p.category] || 0) + 1; });
-    return counts;
-  }, [posts]);
-
-  const reactionCountsByType = useMemo(() => {
-    const counts: Record<string, number> = { felt: 0, heavy: 0, beautiful: 0, haunting: 0 };
-    reactions.forEach(r => { if (r.postId === selectedPost?.id) counts[r.type] = (counts[r.type] || 0) + 1; });
-    return counts;
-  }, [reactions, selectedPost]);
+  const handleToggleSave = async (postId: string) => {
+    if (!user) return;
+    await storage.toggleSavePost(user.id, postId);
+    const updatedUser = await storage.getUserById(user.id);
+    if (updatedUser) {
+      setUser(updatedUser);
+      storage.setCurrentUser(updatedUser);
+    }
+  };
 
   useEffect(() => {
+    if (showSearch && searchInputRef.current) {
+      searchInputRef.current.focus();
+    }
+  }, [showSearch]);
+
+  useEffect(() => {
+    document.title = "serein";
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
         const u = await storage.getUserById(firebaseUser.uid);
@@ -853,26 +1041,23 @@ export default function App() {
   };
 
   useEffect(() => {
-    if (!selectedPost || !isAuthReady) return;
+    if (!isAuthReady) return;
 
-    const reflectionsQuery = query(
-      collection(db, 'posts', selectedPost.id, 'reflections'), 
-      orderBy('createdAt', 'asc')
-    );
+    const reflectionsQuery = collectionGroup(db, 'reflections');
     const unsubscribeReflections = onSnapshot(reflectionsQuery, (snapshot) => {
       setReflections(snapshot.docs.map(doc => doc.data() as Reflection));
-    }, (error) => handleFirestoreError(error, OperationType.LIST, `posts/${selectedPost.id}/reflections`));
+    }, (error) => handleFirestoreError(error, OperationType.LIST, 'reflections'));
 
-    const reactionsQuery = collection(db, 'posts', selectedPost.id, 'reactions');
+    const reactionsQuery = collectionGroup(db, 'reactions');
     const unsubscribeReactions = onSnapshot(reactionsQuery, (snapshot) => {
       setReactions(snapshot.docs.map(doc => doc.data() as Reaction));
-    }, (error) => handleFirestoreError(error, OperationType.LIST, `posts/${selectedPost.id}/reactions`));
+    }, (error) => handleFirestoreError(error, OperationType.LIST, 'reactions'));
 
     return () => {
       unsubscribeReflections();
       unsubscribeReactions();
     };
-  }, [selectedPost, isAuthReady]);
+  }, [isAuthReady]);
 
   const handleSendMessage = async () => {
     if (!user || !activeChatUserId || !messageText.trim()) return;
@@ -951,6 +1136,7 @@ export default function App() {
   const handleReaction = async (type: Reaction['type'], e: React.MouseEvent) => {
     if (!user || !selectedPost) return;
     
+    // Ripple effect
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
     setRipple({ x: e.clientX, y: e.clientY });
     setTimeout(() => setRipple(null), 1000);
@@ -1008,7 +1194,8 @@ export default function App() {
 
   return (
     <ErrorBoundary>
-      <div className={`min-h-screen transition-colors duration-[1500ms] bg-[#0a0a0a] ${currentTheme.text}`}>
+      <div className={`min-h-screen transition-colors duration-[1500ms] bg-[#050505] ${currentTheme.text}`}>
+        <div className="sanctuary-bg" />
         {!user && isAuthReady && <AuthModal onLogin={setUser} />}
       
       <AnimatePresence>
@@ -1048,27 +1235,33 @@ export default function App() {
             )}
           </div>
           
-          <div className="flex items-center gap-3">
-            {/* Search Toggle */}
-            <button
-              onClick={() => { setShowSearch(!showSearch); if (showSearch) setSearchQuery(''); }}
+          <div className="flex items-center gap-4">
+            <button 
+              onClick={() => setShowSearch(!showSearch)}
               className={`p-2 rounded-full transition-all border ${showSearch ? 'bg-white/10 border-white/20 text-white' : 'bg-white/5 border-white/5 text-white/40 hover:text-white/60'}`}
-              title="Search"
             >
               <Search size={14} />
             </button>
 
             {user && (
               <button 
+                onClick={() => setViewedProfileId(user.id)}
+                className="w-8 h-8 rounded-full bg-white/5 border border-white/10 overflow-hidden flex items-center justify-center hover:border-white/30 transition-all"
+              >
+                {user.avatarUrl ? <img src={user.avatarUrl} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" /> : <UserIcon size={14} className="text-white/20" />}
+              </button>
+            )}
+            {user && (
+              <button 
                 onClick={handleLogout}
-                className="text-[10px] uppercase tracking-widest text-white/30 hover:text-white transition-colors hidden sm:block"
+                className="hidden sm:block text-[10px] uppercase tracking-widest text-white/30 hover:text-white transition-colors"
               >
                 Logout
               </button>
             )}
             <button 
               onClick={() => { setWritingType('post'); setIsWriting(true); }}
-              className="flex items-center gap-2 bg-white/5 hover:bg-white/10 px-3 py-1.5 rounded-full transition-all border border-white/10"
+              className="hidden lg:flex items-center gap-2 bg-white/5 hover:bg-white/10 px-3 py-1.5 rounded-full transition-all border border-white/10"
             >
               <Plus size={14} />
               <span className="text-[10px] uppercase tracking-widest">Express</span>
@@ -1083,41 +1276,36 @@ export default function App() {
               initial={{ height: 0, opacity: 0 }}
               animate={{ height: 'auto', opacity: 1 }}
               exit={{ height: 0, opacity: 0 }}
-              className="bg-black/60 backdrop-blur-2xl border-b border-white/5 pointer-events-auto overflow-hidden"
+              className="w-full bg-black/40 backdrop-blur-xl border-b border-white/5 pointer-events-auto overflow-hidden"
             >
               <div className="max-w-xl mx-auto px-4 py-3 flex items-center gap-3">
-                <Search size={14} className="text-white/30 flex-shrink-0" />
+                <Search size={14} className="text-white/30" />
                 <input
                   ref={searchInputRef}
                   type="text"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Search expressions, souls, or themes..."
+                  placeholder="Search the sanctuary..."
                   className="flex-1 bg-transparent text-sm focus:outline-none placeholder:text-white/20"
                 />
                 {searchQuery && (
-                  <button onClick={() => setSearchQuery('')} className="text-white/30 hover:text-white transition-colors">
+                  <button onClick={() => setSearchQuery('')} className="text-white/30 hover:text-white">
                     <X size={14} />
                   </button>
-                )}
-                {searchQuery && (
-                  <span className="text-[9px] uppercase tracking-widest text-white/20 flex-shrink-0">
-                    {searchedPosts.length} found
-                  </span>
                 )}
               </div>
             </motion.div>
           )}
         </AnimatePresence>
 
-        {/* Category Filter — hidden in Zen Mode */}
+        {/* Category Filter - Responsive Scroll */}
         {!isZenMode && (
-          <div className="w-full bg-black/40 backdrop-blur-xl border-b border-white/5 pointer-events-auto">
+          <div className="w-full bg-black/40 backdrop-blur-xl border-b border-white/5 pointer-events-auto overflow-x-auto scrollbar-hide">
             <div className="max-w-xl mx-auto px-4 py-3">
-              <div className="flex items-center gap-2 overflow-x-auto scrollbar-hide py-1">
+              <div className="flex items-center lg:justify-center gap-2 min-w-max">
                 <button 
                   onClick={() => setSelectedCategory(null)}
-                  className={`px-3 py-1 rounded-full text-[8px] uppercase tracking-widest transition-all border flex-shrink-0 ${!selectedCategory ? `bg-white/10 border-white/20 text-white ${currentTheme.glow}` : 'bg-white/5 border-white/5 text-white/40 hover:text-white/60'}`}
+                  className={`px-3 py-1 rounded-full text-[8px] uppercase tracking-widest transition-all border ${!selectedCategory ? `bg-white/10 border-white/20 text-white ${currentTheme.glow}` : 'bg-white/5 border-white/5 text-white/40 hover:text-white/60'}`}
                 >
                   All
                 </button>
@@ -1137,233 +1325,261 @@ export default function App() {
       </nav>
 
       {/* Main Sanctuary Content */}
-      <main className={`flex flex-1 ${isZenMode ? 'pt-20' : 'pt-32'} pb-24 overflow-hidden relative justify-center transition-all duration-500`}>
+      <main className="max-w-7xl mx-auto flex gap-8 pt-32 pb-24 px-6 min-h-screen relative">
         
-        {/* Ripple Overlay */}
-        {ripple && (
-          <div 
-            className="ripple-effect bg-white/20"
-            style={{ left: ripple.x, top: ripple.y }}
-          />
-        )}
+        {/* Left Panel: Identity */}
+        <aside className="hidden lg:flex flex-col w-64 sticky top-32 h-fit space-y-6">
+          <div className="bg-white/[0.03] backdrop-blur-md border border-white/10 rounded-3xl p-6 space-y-6">
+            <div className="flex flex-col items-center text-center space-y-4">
+              <div className="w-20 h-20 rounded-full bg-white/5 border border-white/10 overflow-hidden relative group">
+                {user?.avatarUrl ? (
+                  <img src={user.avatarUrl} alt="" className="w-full h-full object-cover" />
+                ) : (
+                  <UserIcon size={32} className="m-6 text-white/10" />
+                )}
+                <button 
+                  onClick={() => setViewedProfileId(user?.id || null)}
+                  className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"
+                >
+                  <Settings size={16} className="text-white" />
+                </button>
+              </div>
+              <div>
+                <h2 className="text-lg font-serif text-white/90">{user?.username || 'Guest'}</h2>
+                <p className="text-[10px] uppercase tracking-widest text-white/30 mt-1">Sanctuary Member</p>
+              </div>
+            </div>
 
-        {/* Tab Views */}
-        <div className="w-full max-w-xl overflow-y-auto px-4 md:px-6 scrollbar-hide">
-          <AnimatePresence mode="wait">
-            {activeTab === 'home' && (
-              <motion.div
-                key="home"
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -10 }}
-                className="pt-8 space-y-20"
-              >
-                <div className="w-full flex items-center justify-between px-4 opacity-30">
-                  <div className="flex items-center gap-4 text-[9px] uppercase tracking-[0.3em]">
-                    <div className={`w-2 h-2 rounded-full ${currentTheme.bg} border ${currentTheme.accent} animate-pulse`} />
-                    <span>
-                      {searchQuery ? `"${searchQuery}"` : selectedCategory || 'Sanctuary Feed'}
-                    </span>
-                  </div>
-                  <div className="text-[9px] uppercase tracking-[0.3em]">
-                    {new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric' })}
-                  </div>
-                </div>
+            <div className="grid grid-cols-2 gap-4 py-4 border-y border-white/5">
+              <div className="text-center">
+                <div className="text-sm font-serif text-white/80">{user?.followers?.length || 0}</div>
+                <div className="text-[8px] uppercase tracking-widest text-white/30">Followers</div>
+              </div>
+              <div className="text-center">
+                <div className="text-sm font-serif text-white/80">{user?.following?.length || 0}</div>
+                <div className="text-[8px] uppercase tracking-widest text-white/30">Following</div>
+              </div>
+            </div>
 
-                {searchedPosts.length > 0 ? (
-                  searchedPosts.map((post, idx) => (
-                    <motion.div 
-                      key={post.id}
-                      initial={{ opacity: 0, y: 30 }}
-                      whileInView={{ opacity: 1, y: 0 }}
-                      viewport={{ once: true, margin: "-100px" }}
-                      transition={{ duration: 0.8, delay: Math.min(idx * 0.1, 0.3) }}
-                      className="w-full flex flex-col items-center"
-                    >
-                      <div className="w-full relative group">
-                        {/* Background Glow */}
-                        <div className={`absolute -inset-4 ${currentTheme.bg} opacity-[0.03] blur-3xl rounded-[3rem] pointer-events-none transition-all duration-1000 group-hover:opacity-[0.07]`} />
-                        
-                        <div className={`w-full bg-white/[0.03] backdrop-blur-sm border border-white/10 rounded-[2.5rem] p-8 md:p-10 relative overflow-hidden transition-all duration-500 hover:bg-white/[0.05] ${currentTheme.glow}`}>
-                          <div className={`absolute inset-0 bg-gradient-to-br from-white/[0.02] to-transparent pointer-events-none`} />
-                        
-                        <div className="relative z-10 space-y-6">
-                          {/* Post Header */}
-                          <div className="flex items-center justify-between text-[10px] uppercase tracking-[0.4em] text-white/30">
-                            <div className="flex items-center gap-3">
-                              <div className="h-px w-4 bg-white/10" />
-                              <span>{post.category}</span>
-                              <span className="text-white/15">·</span>
-                              <span className="flex items-center gap-1 text-white/15">
-                                <Clock size={8} />
-                                {readingTime(post.content)}m
-                              </span>
-                            </div>
-                            
-                            <div className="flex items-center gap-4">
-                              <button 
-                                onClick={() => !post.isAnonymous && setViewedProfileId(post.userId)}
-                                className={`flex items-center gap-3 transition-all ${post.isAnonymous ? 'cursor-default' : 'hover:text-white group/author'}`}
-                              >
-                                <div className={`w-6 h-6 rounded-full bg-white/5 border border-white/10 overflow-hidden flex items-center justify-center transition-all ${!post.isAnonymous && 'group-hover/author:border-white/30 group-hover/author:scale-110'}`}>
-                                  {!post.isAnonymous && post.avatarUrl ? (
-                                    <img src={post.avatarUrl} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-                                  ) : (
-                                    <UserIcon size={10} className="text-white/20" />
-                                  )}
-                                </div>
-                                <span className={`${!post.isAnonymous && 'underline decoration-white/10 underline-offset-4 group-hover/author:decoration-white/30'}`}>
-                                  {post.isAnonymous ? 'Shadow' : post.username}
-                                </span>
-                              </button>
+            <button 
+              onClick={() => { setWritingType('post'); setIsWriting(true); }}
+              className="w-full py-4 bg-white text-black rounded-2xl text-[10px] uppercase tracking-[0.2em] font-bold hover:bg-white/90 transition-all shadow-[0_0_20px_rgba(255,255,255,0.1)] flex items-center justify-center gap-2"
+            >
+              <Plus size={14} />
+              Express
+            </button>
+          </div>
 
-                              {!post.isAnonymous && post.userId !== user?.id && (
-                                <button 
-                                  onClick={() => { setActiveChatUserId(post.userId); setActiveTab('profile'); }}
-                                  className="p-1.5 rounded-full bg-white/5 hover:bg-white/10 border border-white/5 text-white/30 hover:text-white transition-all"
-                                  title="Whisper"
-                                >
-                                  <MessageCircle size={12} />
-                                </button>
-                              )}
+          <div className="px-4 space-y-4">
+            <button 
+              onClick={() => setActiveTab('home')}
+              className={`w-full flex items-center gap-4 px-4 py-3 rounded-2xl transition-all ${activeTab === 'home' ? 'bg-white/10 text-white' : 'text-white/30 hover:text-white/50'}`}
+            >
+              <Home size={18} />
+              <span className="text-[10px] uppercase tracking-widest font-medium">Sanctuary</span>
+            </button>
+            <button 
+              onClick={() => setActiveTab('daily')}
+              className={`w-full flex items-center gap-4 px-4 py-3 rounded-2xl transition-all ${activeTab === 'daily' ? 'bg-white/10 text-white' : 'text-white/30 hover:text-white/50'}`}
+            >
+              <BookOpen size={18} />
+              <span className="text-[10px] uppercase tracking-widest font-medium">Daily Echo</span>
+            </button>
+            <button 
+              onClick={() => setActiveTab('analytics')}
+              className={`w-full flex items-center gap-4 px-4 py-3 rounded-2xl transition-all ${activeTab === 'analytics' ? 'text-white' : 'text-white/30 hover:text-white/50'}`}
+            >
+              <BarChart3 size={18} />
+              <span className="text-[10px] uppercase tracking-widest font-medium">Resonance</span>
+            </button>
+            <button 
+              onClick={() => setActiveTab('settings')}
+              className={`w-full flex items-center gap-4 px-4 py-3 rounded-2xl transition-all ${activeTab === 'settings' ? 'text-white' : 'text-white/30 hover:text-white/50'}`}
+            >
+              <Settings size={18} />
+              <span className="text-[10px] uppercase tracking-widest font-medium">Settings</span>
+            </button>
+          </div>
+        </aside>
 
-                              {user?.id === post.userId && (
-                                <div className="flex items-center gap-3 ml-2">
-                                  <button onClick={() => { setSelectedPost(post); setWritingType('post'); setIsEditingPost(true); }} className="hover:text-white transition-colors">Edit</button>
-                                  <button onClick={() => { setSelectedPost(post); handleDeletePost(); }} className="hover:text-red-400 transition-colors">Delete</button>
-                                </div>
-                              )}
-                            </div>
-                          </div>
+        {/* Main Feed */}
+        <section className="flex-1 max-w-2xl mx-auto">
+          {/* Ripple Overlay */}
+          {ripple && (
+            <div 
+              className="ripple-effect bg-white/20"
+              style={{ left: ripple.x, top: ripple.y }}
+            />
+          )}
 
-                          {/* Post Content */}
-                          <div className="poetry-content text-lg md:text-xl leading-[1.8] whitespace-pre-wrap italic font-serif text-white/90">
-                            {post.type === 'quote' && <Quote className="mb-6 opacity-10" size={28} />}
-                            {post.content}
-                          </div>
-
-                          {/* Reactions & Actions */}
-                          <div className="pt-6 flex flex-wrap items-center justify-between gap-6 border-t border-white/5">
-                            <div className="flex flex-wrap gap-4 md:gap-8">
-                              {(['felt', 'heavy', 'beautiful', 'haunting'] as const).map(type => {
-                                const count = reactions.filter(r => r.postId === post.id && r.type === type).length;
-                                const hasReacted = reactions.some(r => r.postId === post.id && r.type === type && r.userId === user?.id);
-                                return (
-                                  <button 
-                                    key={type}
-                                    onClick={(e) => { setSelectedPost(post); handleReaction(type, e); }}
-                                    className={`flex items-center gap-2.5 group transition-all ${hasReacted ? 'text-white' : 'text-white/20 hover:text-white/40'}`}
-                                  >
-                                    <div className={`p-2.5 rounded-full border transition-all ${hasReacted ? `border-white/40 bg-white/5 ${currentTheme.glow}` : 'border-white/5 group-hover:border-white/10'}`}>
-                                      {type === 'felt' && <Heart size={15} fill={hasReacted ? 'currentColor' : 'none'} />}
-                                      {type === 'heavy' && <Moon size={15} />}
-                                      {type === 'beautiful' && <Sparkles size={15} />}
-                                      {type === 'haunting' && <Ghost size={15} />}
-                                    </div>
-                                    {count > 0 && <span className="text-[10px] opacity-40 tabular-nums font-medium">{count}</span>}
-                                  </button>
-                                );
-                              })}
-                            </div>
-
-                            <div className="flex items-center gap-4">
-                              <div className="h-6 w-px bg-white/10" />
-
-                              {/* Bookmark Button — NEW */}
-                              <button
-                                onClick={() => toggleBookmark(post.id)}
-                                className={`p-2.5 rounded-full border transition-all ${bookmarks.includes(post.id) ? `border-white/40 bg-white/5 text-white ${currentTheme.glow}` : 'border-white/5 text-white/20 hover:text-white/40 hover:border-white/10'}`}
-                                title={bookmarks.includes(post.id) ? 'Remove bookmark' : 'Save to bookmarks'}
-                              >
-                                <Bookmark size={15} fill={bookmarks.includes(post.id) ? 'currentColor' : 'none'} />
-                              </button>
-
-                              <button 
-                                onClick={() => setOpenReflectionPostId(openReflectionPostId === post.id ? null : post.id)}
-                                className={`flex items-center gap-3 group transition-all ${openReflectionPostId === post.id ? 'text-white' : 'text-white/20 hover:text-white/40'}`}
-                              >
-                                <div className={`p-2.5 rounded-full border transition-all ${openReflectionPostId === post.id ? `border-white/40 bg-white/5 ${currentTheme.glow}` : 'border-white/5 group-hover:border-white/10'}`}>
-                                  <MessageSquare size={15} />
-                                </div>
-                                <div className="flex flex-col items-start">
-                                  <span className="text-[9px] uppercase tracking-[0.2em] font-bold">Echoes</span>
-                                  {reflections.filter(r => r.postId === post.id).length > 0 && (
-                                    <span className="text-[10px] opacity-40 tabular-nums">{reflections.filter(r => r.postId === post.id).length} resonating</span>
-                                  )}
-                                </div>
-                              </button>
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Integrated Reflection Pool */}
-                        <AnimatePresence>
-                          {openReflectionPostId === post.id && (
-                            <motion.div 
-                              initial={{ height: 0, opacity: 0 }}
-                              animate={{ height: 'auto', opacity: 1 }}
-                              exit={{ height: 0, opacity: 0 }}
-                              className="overflow-hidden"
-                            >
-                              <div className="pt-8 space-y-6">
-                                <div className="h-px w-full bg-white/5" />
-                                
-                                <div className="space-y-4">
-                                  {reflections.filter(r => r.postId === post.id && !r.parentId).map((ref) => (
-                                    <div key={ref.id} className="bg-white/[0.02] border border-white/5 p-5 rounded-2xl">
-                                      <div className="flex items-center justify-between mb-3">
-                                        <div className="flex items-center gap-2 text-[8px] uppercase tracking-widest text-white/40">
-                                          <div className="w-4 h-4 rounded-full bg-white/5 border border-white/10 overflow-hidden flex items-center justify-center">
-                                            {ref.avatarUrl ? (
-                                              <img src={ref.avatarUrl} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-                                            ) : (
-                                              <UserIcon size={6} />
-                                            )}
-                                          </div>
-                                          <span>{ref.username}</span>
-                                        </div>
-                                        <button 
-                                          onClick={() => { setSelectedPost(post); setWritingType('reflection'); setReplyToId(ref.id); setIsWriting(true); }}
-                                          className="text-[8px] uppercase tracking-widest text-white/20 hover:text-white transition-all flex items-center gap-1"
-                                        >
-                                          <MessageSquare size={8} />
-                                          Echo
-                                        </button>
-                                      </div>
-                                      <p className="text-sm font-serif italic text-white/60">"{ref.content}"</p>
-                                      
-                                      {reflections.filter(r => r.parentId === ref.id).map(reply => (
-                                        <div key={reply.id} className="mt-3 ml-4 pl-4 border-l border-white/5">
-                                          <div className="text-[7px] uppercase tracking-widest text-white/20 mb-1">{reply.username}</div>
-                                          <p className="text-xs font-serif italic text-white/40">"{reply.content}"</p>
-                                        </div>
-                                      ))}
-                                    </div>
-                                  ))}
-                                </div>
-
-                                <button 
-                                  onClick={() => { setSelectedPost(post); setWritingType('reflection'); setIsWriting(true); }}
-                                  className="w-full flex items-center justify-center gap-2 bg-white/5 hover:bg-white/10 py-3 rounded-xl border border-white/5 transition-all text-[9px] uppercase tracking-widest"
-                                >
-                                  <PenTool size={12} className="text-white/40" />
-                                  <span>Add Reflection</span>
-                                </button>
-                              </div>
-                            </motion.div>
-                          )}
-                        </AnimatePresence>
+          {/* Tab Views */}
+          <div className="w-full scrollbar-hide">
+            <AnimatePresence mode="wait">
+              {activeTab === 'home' && (
+                <motion.div
+                  key="home"
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -10 }}
+                  className="space-y-12"
+                >
+                  <div className="w-full flex items-center justify-between px-4 py-8">
+                    <div className="flex flex-col gap-1">
+                      <h2 className="text-2xl font-serif italic text-white/80">What others are feeling today</h2>
+                      <div className="flex items-center gap-3 text-[9px] uppercase tracking-[0.3em] text-white/20">
+                        <div className={`w-1.5 h-1.5 rounded-full ${currentTheme.bg} border ${currentTheme.accent} animate-pulse`} />
+                        <span>{selectedCategory || 'The Sanctuary'}</span>
                       </div>
                     </div>
-                  </motion.div>
-                ))
-                ) : (
-                  <div className="h-full flex items-center justify-center text-white/10 italic font-serif text-xl py-32">
-                    {searchQuery ? `No expressions match "${searchQuery}"` : 'The sky is clear. No rain yet.'}
+                    <div className="text-[9px] uppercase tracking-[0.3em] text-white/20">
+                      {new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric' })}
+                    </div>
                   </div>
-                )}
-              </motion.div>
-            )}
+
+                  {searchedPosts.length > 0 ? (
+                    <div className="space-y-8">
+                      {searchedPosts.map((post, idx) => (
+                        <motion.div 
+                          key={post.id}
+                          initial={{ opacity: 0, y: 20 }}
+                          whileInView={{ opacity: 1, y: 0 }}
+                          viewport={{ once: true, margin: "-50px" }}
+                          transition={{ duration: 0.6, delay: Math.min(idx * 0.05, 0.2) }}
+                          className="w-full"
+                        >
+                          <div className="w-full relative group">
+                            <div className={`w-full bg-white/[0.02] backdrop-blur-md border border-white/5 rounded-[2rem] p-6 md:p-8 relative overflow-hidden transition-all duration-500 hover:bg-white/[0.04] hover:border-white/10 ${expandedPostId === post.id ? 'ring-1 ring-white/10' : ''}`}>
+                              <div className="relative z-10 space-y-5">
+                                <div className="flex items-center justify-between text-[9px] uppercase tracking-[0.3em] text-white/20">
+                                  <div className="flex items-center gap-3">
+                                    <span className="text-white/40">{post.category}</span>
+                                    {user?.savedPosts?.includes(post.id) && <Bookmark size={10} className="text-white/60" />}
+                                  </div>
+                                  
+                                  <div className="flex items-center gap-4">
+                                    <button 
+                                      onClick={() => !post.isAnonymous && setViewedProfileId(post.userId)}
+                                      className={`flex items-center gap-2 transition-all ${post.isAnonymous ? 'cursor-default' : 'hover:text-white group/author'}`}
+                                    >
+                                      <div className="w-5 h-5 rounded-full bg-white/5 border border-white/5 overflow-hidden flex items-center justify-center">
+                                        {!post.isAnonymous && post.avatarUrl ? (
+                                          <img src={post.avatarUrl} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                                        ) : (
+                                          <UserIcon size={8} className="text-white/20" />
+                                        )}
+                                      </div>
+                                      <span className="text-[8px]">{post.isAnonymous ? 'Shadow' : post.username}</span>
+                                    </button>
+
+                                    {user?.id === post.userId && (
+                                      <div className="flex items-center gap-3">
+                                        <button onClick={() => { setSelectedPost(post); setWritingType('post'); setIsEditingPost(true); }} className="hover:text-white transition-colors">Edit</button>
+                                        <button onClick={() => { setSelectedPost(post); handleDeletePost(); }} className="hover:text-red-400 transition-colors">Delete</button>
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+
+                                <div 
+                                  className={`poetry-content text-base md:text-lg leading-relaxed italic font-serif text-white/80 cursor-pointer transition-all duration-500 ${expandedPostId === post.id ? '' : 'line-clamp-2'}`}
+                                  onClick={() => setExpandedPostId(expandedPostId === post.id ? null : post.id)}
+                                >
+                                  {post.type === 'quote' && <Quote className="mb-4 opacity-5" size={20} />}
+                                  {post.content}
+                                </div>
+
+                                <div className="pt-4 flex items-center justify-between border-t border-white/5">
+                                  <div className="flex gap-6">
+                                    {(['felt', 'heavy', 'beautiful', 'haunting'] as const).map(type => {
+                                      const count = reactions.filter(r => r.postId === post.id && r.type === type).length;
+                                      const hasReacted = reactions.some(r => r.postId === post.id && r.type === type && r.userId === user?.id);
+                                      return (
+                                        <button 
+                                          key={type}
+                                          onClick={(e) => { setSelectedPost(post); handleReaction(type, e); }}
+                                          className={`flex items-center gap-2 transition-all ${hasReacted ? 'text-white' : 'text-white/10 hover:text-white/30'}`}
+                                          title={`${count} people ${type} this`}
+                                        >
+                                          {type === 'felt' && <Heart size={14} fill={hasReacted ? 'currentColor' : 'none'} />}
+                                          {type === 'heavy' && <Moon size={14} />}
+                                          {type === 'beautiful' && <Sparkles size={14} />}
+                                          {type === 'haunting' && <Ghost size={14} />}
+                                          {count > 0 && <span className="text-[9px] tabular-nums">{count}</span>}
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+
+                                  <div className="flex items-center gap-4">
+                                    <button 
+                                      onClick={() => handleToggleSave(post.id)}
+                                      className={`p-2 rounded-full transition-all ${user?.savedPosts?.includes(post.id) ? 'text-white' : 'text-white/10 hover:text-white/30'}`}
+                                    >
+                                      <Bookmark size={14} fill={user?.savedPosts?.includes(post.id) ? 'currentColor' : 'none'} />
+                                    </button>
+                                    <button 
+                                      onClick={() => setOpenReflectionPostId(openReflectionPostId === post.id ? null : post.id)}
+                                      className={`flex items-center gap-2 transition-all ${openReflectionPostId === post.id ? 'text-white' : 'text-white/10 hover:text-white/30'}`}
+                                    >
+                                      <MessageSquare size={14} />
+                                      <span className="text-[9px]">{reflections.filter(r => r.postId === post.id).length}</span>
+                                    </button>
+                                  </div>
+                                </div>
+
+                                <AnimatePresence>
+                                  {openReflectionPostId === post.id && (
+                                    <motion.div 
+                                      initial={{ height: 0, opacity: 0 }}
+                                      animate={{ height: 'auto', opacity: 1 }}
+                                      exit={{ height: 0, opacity: 0 }}
+                                      className="overflow-hidden"
+                                    >
+                                      <div className="pt-6 space-y-4">
+                                        <div className="space-y-3">
+                                          {reflections.filter(r => r.postId === post.id && !r.parentId).map((ref) => (
+                                            <div key={ref.id} className="bg-white/[0.01] border border-white/5 p-4 rounded-2xl">
+                                              <div className="flex items-center justify-between mb-2">
+                                                <div className="flex items-center gap-2 text-[7px] uppercase tracking-widest text-white/30">
+                                                  <div className="w-4 h-4 rounded-full bg-white/5 border border-white/5 overflow-hidden">
+                                                    {ref.avatarUrl ? <img src={ref.avatarUrl} alt="" className="w-full h-full object-cover" /> : <UserIcon size={6} />}
+                                                  </div>
+                                                  <span>{ref.username}</span>
+                                                </div>
+                                                <button 
+                                                  onClick={() => { setSelectedPost(post); setWritingType('reflection'); setReplyToId(ref.id); setIsWriting(true); }}
+                                                  className="text-[7px] uppercase tracking-widest text-white/20 hover:text-white transition-all"
+                                                >
+                                                  Echo
+                                                </button>
+                                              </div>
+                                              <p className="text-xs font-serif italic text-white/50">"{ref.content}"</p>
+                                            </div>
+                                          ))}
+                                        </div>
+                                        <button 
+                                          onClick={() => { setSelectedPost(post); setWritingType('reflection'); setIsWriting(true); }}
+                                          className="w-full py-3 bg-white/5 hover:bg-white/10 rounded-xl border border-white/5 transition-all text-[8px] uppercase tracking-widest text-white/40"
+                                        >
+                                          This felt like...
+                                        </button>
+                                      </div>
+                                    </motion.div>
+                                  )}
+                                </AnimatePresence>
+                              </div>
+                            </div>
+                          </div>
+                        </motion.div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="h-full flex items-center justify-center text-white/10 italic font-serif text-xl py-32">
+                      The sky is clear. No rain yet.
+                    </div>
+                  )}
+                </motion.div>
+              )}
 
             {activeTab === 'daily' && (
               <motion.div
@@ -1378,44 +1594,15 @@ export default function App() {
                   <p className="text-xs uppercase tracking-[0.3em] text-white/20">Curated for your sanctuary</p>
                 </div>
 
-                {/* Sanctuary Insights Widget — on mobile/tablet where sidebar is hidden */}
-                <div className="2xl:hidden">
-                  <SanctuaryInsights
-                    poem={poemOfTheDay}
-                    thought={thoughtOfTheDay}
-                    mostFelt={mostFelt}
-                    onSelect={(post) => { setSelectedPost(post); setActiveTab('home'); }}
-                    categories={CATEGORIES}
-                    posts={posts}
-                  />
-                </div>
-
                 <div className="space-y-8">
                   <div className="bg-white/[0.03] border border-white/10 rounded-3xl p-8 space-y-6">
                     <div className="flex items-center gap-3 text-[10px] uppercase tracking-widest text-white/30">
                       <BookOpen size={14} />
                       <span>Poem of the Day</span>
                     </div>
-                    {poemOfTheDay ? (
-                      <>
-                        <div className="poetry-content text-xl leading-relaxed italic text-white/90 whitespace-pre-wrap">
-                          {poemOfTheDay.content}
-                        </div>
-                        <div className="flex items-center justify-between pt-4 border-t border-white/5">
-                          <span className="text-[9px] uppercase tracking-widest text-white/20">
-                            — {poemOfTheDay.isAnonymous ? 'Shadow' : poemOfTheDay.username}
-                          </span>
-                          <button
-                            onClick={() => { setSelectedPost(poemOfTheDay); setActiveTab('home'); }}
-                            className="text-[9px] uppercase tracking-widest text-white/30 hover:text-white transition-colors flex items-center gap-1"
-                          >
-                            Read more <ChevronRight size={10} />
-                          </button>
-                        </div>
-                      </>
-                    ) : (
-                      <p className="text-white/20 italic">No poems have been shared yet.</p>
-                    )}
+                    <div className="poetry-content text-xl leading-relaxed italic text-white/90 whitespace-pre-wrap">
+                      {poemOfTheDay?.content}
+                    </div>
                   </div>
 
                   <div className="bg-white/[0.03] border border-white/10 rounded-3xl p-8 space-y-6">
@@ -1423,73 +1610,9 @@ export default function App() {
                       <Quote size={14} />
                       <span>Thought of the Day</span>
                     </div>
-                    {thoughtOfTheDay ? (
-                      <>
-                        <p className="text-lg font-serif italic text-white/70 leading-relaxed">
-                          "{thoughtOfTheDay.content}"
-                        </p>
-                        <div className="flex items-center justify-between pt-4 border-t border-white/5">
-                          <span className="text-[9px] uppercase tracking-widest text-white/20">
-                            — {thoughtOfTheDay.isAnonymous ? 'Shadow' : thoughtOfTheDay.username}
-                          </span>
-                          <span className="text-[9px] uppercase tracking-widest text-white/15">{thoughtOfTheDay.category}</span>
-                        </div>
-                      </>
-                    ) : (
-                      <p className="text-white/20 italic">No thoughts have been shared yet.</p>
-                    )}
-                  </div>
-
-                  {/* Discover Souls — on mobile/tablet */}
-                  <div className="2xl:hidden bg-white/[0.03] border border-white/10 rounded-3xl p-8 space-y-6">
-                    <div className="flex items-center gap-3 text-[10px] uppercase tracking-widest text-white/30">
-                      <Users size={14} />
-                      <span>Souls in the Sanctuary</span>
-                    </div>
-                    <div className="grid grid-cols-2 gap-3">
-                      {allUsers.slice(0, 6).map(u => (
-                        <button
-                          key={u.id}
-                          onClick={() => setViewedProfileId(u.id)}
-                          className="flex items-center gap-3 p-3 bg-white/[0.02] border border-white/5 rounded-2xl hover:bg-white/5 transition-all text-left group"
-                        >
-                          <div className="w-8 h-8 rounded-full bg-white/5 border border-white/10 overflow-hidden flex-shrink-0">
-                            {u.avatarUrl ? <img src={u.avatarUrl} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" /> : <UserIcon size={12} className="m-2 text-white/20" />}
-                          </div>
-                          <div className="overflow-hidden">
-                            <div className="text-[10px] text-white/60 truncate group-hover:text-white transition-colors">{u.username}</div>
-                            <div className="text-[8px] text-white/20 truncate">{posts.filter(p => p.userId === u.id).length} expressions</div>
-                          </div>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Trending Themes — on mobile/tablet */}
-                  <div className="2xl:hidden bg-white/[0.03] border border-white/10 rounded-3xl p-8 space-y-6">
-                    <div className="flex items-center gap-3 text-[10px] uppercase tracking-widest text-white/30">
-                      <TrendingUp size={14} />
-                      <span>Resonating Themes</span>
-                    </div>
-                    <div className="space-y-4">
-                      {trendingCategories.map(([cat, count], i) => (
-                        <button
-                          key={cat}
-                          onClick={() => { setSelectedCategory(cat); setActiveTab('home'); }}
-                          className="w-full flex items-center gap-4 group text-white/40 hover:text-white/70 transition-colors"
-                        >
-                          <span className="text-[9px] text-white/15 w-4">{i + 1}</span>
-                          <span className="text-[10px] uppercase tracking-widest flex-1 text-left">{cat}</span>
-                          <div className="flex items-center gap-2">
-                            <div
-                              className="h-px bg-white/10 rounded transition-all group-hover:bg-white/20"
-                              style={{ width: `${Math.min(80, (count / (posts.length || 1)) * 300)}px` }}
-                            />
-                            <span className="text-[8px] text-white/20 tabular-nums w-6 text-right">{count}</span>
-                          </div>
-                        </button>
-                      ))}
-                    </div>
+                    <p className="text-lg font-serif italic text-white/70 leading-relaxed">
+                      "{thoughtOfTheDay?.content}"
+                    </p>
                   </div>
                 </div>
               </motion.div>
@@ -1512,19 +1635,16 @@ export default function App() {
                     )}
                   </div>
                   <div className="space-y-2">
-                    <h2 className="text-2xl font-serif text-white/80">{user?.username}</h2>
-                    <p className="text-[10px] uppercase tracking-widest text-white/20">Member since {new Date(user?.joinDate || 0).toLocaleDateString()}</p>
-                    <div className="flex items-center gap-4 pt-1">
-                      <span className="text-[9px] text-white/30">
-                        <span className="text-white/60 font-medium">{posts.filter(p => p.userId === user?.id).length}</span> expressions
-                      </span>
-                      <span className="text-[9px] text-white/30">
-                        <span className="text-white/60 font-medium">{user?.following?.length || 0}</span> following
-                      </span>
-                      <span className="text-[9px] text-white/30">
-                        <span className="text-white/60 font-medium">{bookmarks.length}</span> saved
-                      </span>
+                    <div className="flex items-center gap-4">
+                      <h2 className="text-2xl font-serif text-white/80">{user?.username}</h2>
+                      <button 
+                        onClick={() => setViewedProfileId(user?.id || null)}
+                        className="text-[10px] uppercase tracking-widest text-white/30 hover:text-white transition-colors"
+                      >
+                        Edit Identity
+                      </button>
                     </div>
+                    <p className="text-[10px] uppercase tracking-widest text-white/20">Member since {new Date(user?.joinDate || 0).toLocaleDateString()}</p>
                   </div>
                 </div>
 
@@ -1532,6 +1652,7 @@ export default function App() {
                 <div className="space-y-8">
                   <h3 className="text-xs uppercase tracking-[0.4em] text-white/30 border-b border-white/5 pb-4">Sanctuary Whispers</h3>
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    {/* Chat List */}
                     <div className="md:col-span-1 space-y-2">
                       {getChatPartners().length > 0 ? (
                         getChatPartners().map(partnerId => {
@@ -1561,6 +1682,7 @@ export default function App() {
                       )}
                     </div>
 
+                    {/* Chat Window */}
                     <div className="md:col-span-2 bg-white/[0.02] border border-white/5 rounded-2xl flex flex-col h-[400px]">
                       {activeChatUserId ? (
                         <>
@@ -1635,47 +1757,37 @@ export default function App() {
                   )}
                 </div>
 
-                {/* Bookmarks Section — NEW */}
+                {/* Saved Expressions Section */}
                 <div className="space-y-8">
-                  <h3 className="text-xs uppercase tracking-[0.4em] text-white/30 border-b border-white/5 pb-4 flex items-center gap-2">
-                    <Bookmark size={12} />
-                    Saved Expressions ({bookmarkedPosts.length})
-                  </h3>
-                  {bookmarkedPosts.length > 0 ? (
+                  <h3 className="text-xs uppercase tracking-[0.4em] text-white/30 border-b border-white/5 pb-4">Saved Expressions</h3>
+                  {user?.savedPosts && user.savedPosts.length > 0 ? (
                     <div className="space-y-4">
-                      {bookmarkedPosts.map(post => (
-                        <div key={post.id} className="bg-white/[0.02] border border-white/5 p-6 rounded-2xl space-y-3 group">
+                      {posts.filter(p => user.savedPosts?.includes(p.id)).map(post => (
+                        <div key={post.id} className="bg-white/[0.02] border border-white/5 p-6 rounded-2xl space-y-4">
                           <div className="flex items-center justify-between">
-                            <div className="text-[9px] uppercase tracking-widest text-white/20">{post.category} · {post.type}</div>
-                            <button
-                              onClick={() => toggleBookmark(post.id)}
-                              className="text-white/20 hover:text-white transition-colors opacity-0 group-hover:opacity-100"
-                              title="Remove bookmark"
+                            <div className="text-[9px] uppercase tracking-widest text-white/20">{post.category} • {new Date(post.createdAt).toLocaleDateString()}</div>
+                            <button 
+                              onClick={() => handleToggleSave(post.id)}
+                              className="text-white/20 hover:text-white transition-colors"
                             >
                               <X size={12} />
                             </button>
                           </div>
                           <p className="font-serif italic text-white/60 line-clamp-3">"{post.content}"</p>
-                          <div className="flex items-center justify-between">
-                            <span className="text-[8px] text-white/15">— {post.isAnonymous ? 'Shadow' : post.username}</span>
-                            <button 
-                              onClick={() => { setSelectedPost(post); setActiveTab('home'); }}
-                              className="text-[8px] uppercase tracking-widest text-white/30 hover:text-white transition-colors flex items-center gap-1"
-                            >
-                              Read <ChevronRight size={8} />
-                            </button>
-                          </div>
+                          <button 
+                            onClick={() => { setSelectedPost(post); setActiveTab('home'); }}
+                            className="text-[8px] uppercase tracking-widest text-white/40 hover:text-white transition-colors"
+                          >
+                            Read Full Expression
+                          </button>
                         </div>
                       ))}
                     </div>
                   ) : (
-                    <div className="text-center py-8 text-white/10 italic text-xs">
-                      Save expressions by tapping the bookmark icon on any post.
-                    </div>
+                    <div className="text-center py-8 text-white/10 italic text-xs uppercase tracking-widest">No saved expressions yet.</div>
                   )}
                 </div>
 
-                {/* Your Expressions */}
                 <div className="space-y-8">
                   <h3 className="text-xs uppercase tracking-[0.4em] text-white/30 border-b border-white/5 pb-4">Your Expressions</h3>
                   {posts.filter(p => p.userId === user?.id).length > 0 ? (
@@ -1711,7 +1823,6 @@ export default function App() {
                   <p className="text-xs uppercase tracking-[0.3em] text-white/20">How your thoughts echo in the sanctuary</p>
                 </div>
 
-                {/* Stats Grid */}
                 <div className="grid grid-cols-2 gap-4">
                   <div className="bg-white/[0.03] border border-white/10 p-6 rounded-2xl space-y-2">
                     <div className="text-2xl font-serif text-white/80">{posts.filter(p => p.userId === user?.id).length}</div>
@@ -1723,72 +1834,8 @@ export default function App() {
                     </div>
                     <div className="text-[8px] uppercase tracking-widest text-white/30">Total Echoes Received</div>
                   </div>
-                  <div className="bg-white/[0.03] border border-white/10 p-6 rounded-2xl space-y-2">
-                    <div className="text-2xl font-serif text-white/80">{bookmarks.length}</div>
-                    <div className="text-[8px] uppercase tracking-widest text-white/30">Saved Expressions</div>
-                  </div>
-                  <div className="bg-white/[0.03] border border-white/10 p-6 rounded-2xl space-y-2">
-                    <div className="text-2xl font-serif text-white/80">{user?.following?.length || 0}</div>
-                    <div className="text-[8px] uppercase tracking-widest text-white/30">Following</div>
-                  </div>
                 </div>
 
-                {/* Post Type Breakdown — NEW */}
-                <div className="bg-white/[0.03] border border-white/10 p-6 rounded-2xl space-y-5">
-                  <h3 className="text-[10px] uppercase tracking-widest text-white/30">Your Expression Types</h3>
-                  {(['poem', 'quote', 'thought'] as const).map(type => {
-                    const count = posts.filter(p => p.userId === user?.id && p.type === type).length;
-                    const total = posts.filter(p => p.userId === user?.id).length;
-                    const pct = total > 0 ? (count / total) * 100 : 0;
-                    return (
-                      <div key={type} className="space-y-2">
-                        <div className="flex items-center justify-between text-[9px] uppercase tracking-widest">
-                          <span className="text-white/40">{type}</span>
-                          <span className="text-white/20">{count}</span>
-                        </div>
-                        <div className="h-1 bg-white/5 rounded-full overflow-hidden">
-                          <motion.div
-                            initial={{ width: 0 }}
-                            animate={{ width: `${pct}%` }}
-                            transition={{ duration: 1, delay: 0.2 }}
-                            className="h-full bg-white/20 rounded-full"
-                          />
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-
-                {/* Sanctuary-wide Category Breakdown — NEW */}
-                <div className="bg-white/[0.03] border border-white/10 p-6 rounded-2xl space-y-5">
-                  <h3 className="text-[10px] uppercase tracking-widest text-white/30">Sanctuary Pulse by Theme</h3>
-                  {trendingCategories.map(([cat, count]) => {
-                    const pct = posts.length > 0 ? (count / posts.length) * 100 : 0;
-                    return (
-                      <div key={cat} className="space-y-2">
-                        <div className="flex items-center justify-between text-[9px] uppercase tracking-widest">
-                          <button
-                            onClick={() => { setSelectedCategory(cat); setActiveTab('home'); }}
-                            className="text-white/40 hover:text-white transition-colors"
-                          >
-                            {cat}
-                          </button>
-                          <span className="text-white/20 tabular-nums">{count} posts · {pct.toFixed(0)}%</span>
-                        </div>
-                        <div className="h-1 bg-white/5 rounded-full overflow-hidden">
-                          <motion.div
-                            initial={{ width: 0 }}
-                            animate={{ width: `${pct}%` }}
-                            transition={{ duration: 1, delay: 0.1 }}
-                            className="h-full bg-white/15 rounded-full"
-                          />
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-
-                {/* Recent Echoes */}
                 <div className="space-y-6">
                   <h3 className="text-xs uppercase tracking-[0.4em] text-white/30 border-b border-white/5 pb-4">Recent Echoes on Your Posts</h3>
                   <div className="space-y-4">
@@ -1803,7 +1850,7 @@ export default function App() {
                             </div>
                             <div className="space-y-2">
                               <div className="text-[9px] uppercase tracking-widest text-white/40">
-                                <span className="text-white/60">{ref.username}</span> echoed on your post in <span className="italic">{posts.find(p => p.id === ref.postId)?.category}</span>
+                                <span className="text-white/60">{ref.username}</span> echoed on your post in <span className="italic">{posts.find(p => p.id === ref.postId)?.category || 'Unknown'}</span>
                               </div>
                               <p className="text-sm font-serif italic text-white/70">"{ref.content}"</p>
                               <div className="text-[8px] text-white/20">{new Date(ref.createdAt).toLocaleString()}</div>
@@ -1833,7 +1880,24 @@ export default function App() {
 
                 <div className="space-y-6">
                   <div className="bg-white/[0.03] border border-white/10 p-8 rounded-3xl space-y-8">
-                    {/* Account */}
+                    <div className="space-y-6">
+                      <h4 className="text-[10px] uppercase tracking-widest text-white/30">Sanctuary Experience</h4>
+                      <div className="flex items-center justify-between">
+                        <div className="space-y-1">
+                          <div className="text-sm text-white/70">Zen Mode</div>
+                          <div className="text-[10px] text-white/30">Hide distractions for a focused experience</div>
+                        </div>
+                        <button 
+                          onClick={() => setIsZenMode(!isZenMode)}
+                          className={`w-12 h-6 rounded-full transition-all relative ${isZenMode ? 'bg-white' : 'bg-white/10'}`}
+                        >
+                          <div className={`absolute top-1 w-4 h-4 rounded-full transition-all ${isZenMode ? 'right-1 bg-black' : 'left-1 bg-white/40'}`} />
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="h-px w-full bg-white/5" />
+
                     <div className="space-y-6">
                       <h4 className="text-[10px] uppercase tracking-widest text-white/30">Account</h4>
                       <div className="flex items-center justify-between">
@@ -1842,12 +1906,20 @@ export default function App() {
                             {user?.avatarUrl ? <img src={user.avatarUrl} alt="" className="w-full h-full object-cover" /> : <UserIcon size={20} className="m-3 text-white/10" />}
                           </div>
                           <div>
-                            <div className="text-sm text-white/80">{user?.username}</div>
+                            <div className="flex items-center gap-3">
+                              <div className="text-sm text-white/80">{user?.username}</div>
+                              <button 
+                                onClick={() => setViewedProfileId(user?.id || null)}
+                                className="text-[9px] uppercase tracking-widest text-white/30 hover:text-white transition-colors"
+                              >
+                                Edit
+                              </button>
+                            </div>
                             <div className="text-[10px] text-white/30">Joined {new Date(user?.joinDate || 0).toLocaleDateString()}</div>
                           </div>
                         </div>
                         <button 
-                          onClick={() => { storage.setCurrentUser(null); window.location.reload(); }}
+                          onClick={handleLogout}
                           className="px-4 py-2 rounded-full bg-red-500/10 border border-red-500/20 text-red-400 text-[10px] uppercase tracking-widest hover:bg-red-500/20 transition-all"
                         >
                           Logout
@@ -1857,55 +1929,16 @@ export default function App() {
 
                     <div className="h-px w-full bg-white/5" />
 
-                    {/* Sanctuary Experience */}
                     <div className="space-y-6">
                       <h4 className="text-[10px] uppercase tracking-widest text-white/30">Sanctuary Experience</h4>
-                      
-                      {/* Zen Mode — NOW FUNCTIONAL */}
                       <div className="flex items-center justify-between">
                         <div className="space-y-1">
-                          <div className="text-sm text-white/70 flex items-center gap-2">
-                            <Zap size={14} className="text-white/30" />
-                            Zen Mode
-                          </div>
-                          <div className="text-[10px] text-white/30">Hide category filters for distraction-free reading</div>
+                          <div className="text-sm text-white/70">Zen Mode</div>
+                          <div className="text-[10px] text-white/30">Hide all distractions for deep focus</div>
                         </div>
-                        <button
-                          onClick={() => setIsZenMode(!isZenMode)}
-                          className={`w-10 h-5 rounded-full border relative transition-all duration-300 ${isZenMode ? 'bg-white/20 border-white/30' : 'bg-white/5 border-white/10'}`}
-                        >
-                          <div className={`absolute top-1 w-3 h-3 rounded-full transition-all duration-300 ${isZenMode ? 'left-6 bg-white' : 'left-1 bg-white/30'}`} />
+                        <button className="w-10 h-5 rounded-full bg-white/5 border border-white/10 relative">
+                          <div className="absolute left-1 top-1 w-3 h-3 rounded-full bg-white/20" />
                         </button>
-                      </div>
-
-                      <div className="h-px w-full bg-white/5" />
-
-                      {/* Edit Profile shortcut */}
-                      <div className="flex items-center justify-between">
-                        <div className="space-y-1">
-                          <div className="text-sm text-white/70">Edit Profile</div>
-                          <div className="text-[10px] text-white/30">Update your bio and avatar</div>
-                        </div>
-                        <button
-                          onClick={() => { setViewedProfileId(user?.id || null); }}
-                          className="px-4 py-2 rounded-full bg-white/5 border border-white/10 text-white/50 text-[10px] uppercase tracking-widest hover:bg-white/10 transition-all"
-                        >
-                          Edit
-                        </button>
-                      </div>
-
-                      <div className="h-px w-full bg-white/5" />
-
-                      {/* Bookmarks info */}
-                      <div className="flex items-center justify-between">
-                        <div className="space-y-1">
-                          <div className="text-sm text-white/70 flex items-center gap-2">
-                            <Bookmark size={14} className="text-white/30" />
-                            Saved Expressions
-                          </div>
-                          <div className="text-[10px] text-white/30">Bookmarks are stored locally on this device</div>
-                        </div>
-                        <span className="text-sm font-serif text-white/40">{bookmarks.length}</span>
                       </div>
                     </div>
                   </div>
@@ -1913,181 +1946,135 @@ export default function App() {
               </motion.div>
             )}
           </AnimatePresence>
-        </div>
+          </div>
+        </section>
 
-        {/* Left Sidebar — now with actual content */}
-        <aside className="fixed left-8 bottom-32 z-20 hidden xl:block w-[280px] space-y-6">
-          {user && (
-            <div className="bg-white/[0.03] border border-white/10 rounded-2xl p-5 space-y-4 backdrop-blur-md">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-white/5 border border-white/10 overflow-hidden flex-shrink-0">
-                  {user.avatarUrl ? (
-                    <img src={user.avatarUrl} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-                  ) : (
-                    <UserIcon size={16} className="m-2 text-white/20" />
-                  )}
-                </div>
-                <div className="overflow-hidden">
-                  <div className="text-sm font-serif text-white/70 truncate">{user.username}</div>
-                  <div className="text-[9px] uppercase tracking-widest text-white/20">
-                    {posts.filter(p => p.userId === user.id).length} expressions
+        {/* Right Panel: Ambient Life */}
+        <aside className="hidden xl:flex flex-col w-80 sticky top-32 h-fit space-y-8">
+          {/* Most Felt Today */}
+          <div className="bg-white/[0.03] backdrop-blur-md border border-white/10 rounded-3xl p-6 space-y-6">
+            <div className="flex items-center gap-3 text-[10px] uppercase tracking-[0.3em] text-white/40">
+              <TrendingUp size={14} />
+              <span>Most Felt Today</span>
+            </div>
+            {mostFeltPost ? (
+              <div 
+                onClick={() => { setSelectedPost(mostFeltPost); setActiveTab('home'); setExpandedPostId(mostFeltPost.id); }}
+                className="space-y-3 cursor-pointer group"
+              >
+                <p className="text-xs font-serif italic text-white/60 group-hover:text-white transition-colors line-clamp-3 leading-relaxed">
+                  "{mostFeltPost.content}"
+                </p>
+                <div className="flex items-center justify-between">
+                  <span className="text-[8px] uppercase tracking-widest text-white/20">— {mostFeltPost.isAnonymous ? 'Shadow' : mostFeltPost.username}</span>
+                  <div className="flex items-center gap-1 text-[8px] text-white/40">
+                    <Heart size={8} fill="currentColor" />
+                    <span>{reactions.filter(r => r.postId === mostFeltPost.id).length}</span>
                   </div>
                 </div>
               </div>
-              <div className="grid grid-cols-3 gap-2 pt-3 border-t border-white/5">
-                <div className="text-center">
-                  <div className="text-lg font-serif text-white/60">{posts.filter(p => p.userId === user.id).length}</div>
-                  <div className="text-[7px] uppercase tracking-widest text-white/20">Posts</div>
-                </div>
-                <div className="text-center">
-                  <div className="text-lg font-serif text-white/60">{user.following?.length || 0}</div>
-                  <div className="text-[7px] uppercase tracking-widest text-white/20">Following</div>
-                </div>
-                <div className="text-center">
-                  <div className="text-lg font-serif text-white/60">{bookmarks.length}</div>
-                  <div className="text-[7px] uppercase tracking-widest text-white/20">Saved</div>
-                </div>
-              </div>
-            </div>
-          )}
-
-          <SanctuaryInsights
-            poem={poemOfTheDay}
-            thought={thoughtOfTheDay}
-            mostFelt={mostFelt}
-            onSelect={(post) => { setSelectedPost(post); setActiveTab('home'); }}
-            categories={CATEGORIES}
-            posts={posts}
-          />
-        </aside>
-
-        {/* Right Sidebar — now with actual content */}
-        <aside className="fixed right-8 top-32 z-20 hidden 2xl:block w-[300px] space-y-6">
-          {/* Trending Themes */}
-          <div className="bg-white/[0.03] border border-white/10 rounded-2xl p-5 space-y-4 backdrop-blur-md">
-            <div className="flex items-center gap-2 text-[9px] uppercase tracking-widest text-white/30">
-              <TrendingUp size={12} />
-              <span>Resonating Themes</span>
-            </div>
-            <div className="space-y-3">
-              {trendingCategories.length > 0 ? trendingCategories.map(([cat, count], i) => (
-                <button
-                  key={cat}
-                  onClick={() => setSelectedCategory(selectedCategory === cat ? null : cat)}
-                  className={`w-full flex items-center gap-3 group transition-all ${selectedCategory === cat ? 'text-white' : 'text-white/40 hover:text-white/60'}`}
-                >
-                  <span className="text-[8px] text-white/15 w-3">{i + 1}</span>
-                  <span className="text-[9px] uppercase tracking-widest flex-1 text-left">{cat}</span>
-                  <div className="flex items-center gap-2">
-                    <div
-                      className={`h-px rounded transition-all ${selectedCategory === cat ? 'bg-white/40' : 'bg-white/10 group-hover:bg-white/20'}`}
-                      style={{ width: `${Math.max(12, Math.min(60, (count / (posts.length || 1)) * 300))}px` }}
-                    />
-                    <span className="text-[8px] text-white/20 tabular-nums w-5 text-right">{count}</span>
-                  </div>
-                </button>
-              )) : (
-                <p className="text-[10px] text-white/20 italic">No posts yet.</p>
-              )}
-            </div>
+            ) : (
+              <p className="text-[10px] text-white/20 italic">The sanctuary is quiet...</p>
+            )}
           </div>
 
-          {/* Discover Souls */}
-          <div className="bg-white/[0.03] border border-white/10 rounded-2xl p-5 space-y-4 backdrop-blur-md">
-            <div className="flex items-center gap-2 text-[9px] uppercase tracking-widest text-white/30">
-              <Users size={12} />
-              <span>Souls in the Sanctuary</span>
-              <span className="ml-auto text-white/15">{allUsers.length}</span>
+          {/* Poem of the Day */}
+          <div className="bg-white/[0.03] backdrop-blur-md border border-white/10 rounded-3xl p-6 space-y-6">
+            <div className="flex items-center gap-3 text-[10px] uppercase tracking-[0.3em] text-white/40">
+              <Award size={14} />
+              <span>Poem of the Day</span>
             </div>
-            <div className="space-y-3">
-              {allUsers.slice(0, 7).map(u => (
-                <button
-                  key={u.id}
-                  onClick={() => setViewedProfileId(u.id)}
-                  className="w-full flex items-center gap-3 group transition-all text-white/40 hover:text-white/70"
-                >
-                  <div className="w-7 h-7 rounded-full bg-white/5 border border-white/10 overflow-hidden flex-shrink-0">
-                    {u.avatarUrl ? (
-                      <img src={u.avatarUrl} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-                    ) : (
-                      <UserIcon size={10} className="m-1 text-white/20" />
-                    )}
+            {poemOfTheDay ? (
+              <div 
+                onClick={() => { setSelectedPost(poemOfTheDay); setActiveTab('home'); setExpandedPostId(poemOfTheDay.id); }}
+                className="space-y-3 cursor-pointer group"
+              >
+                <p className="text-xs font-serif italic text-white/60 group-hover:text-white transition-colors line-clamp-4 leading-relaxed">
+                  {poemOfTheDay.content}
+                </p>
+                <div className="text-[8px] uppercase tracking-widest text-white/20 text-right">— {poemOfTheDay.isAnonymous ? 'Shadow' : poemOfTheDay.username}</div>
+              </div>
+            ) : (
+              <p className="text-[10px] text-white/20 italic">Ink is still flowing...</p>
+            )}
+          </div>
+
+          {/* Suggested Souls */}
+          <div className="bg-white/[0.03] backdrop-blur-md border border-white/10 rounded-3xl p-6 space-y-6">
+            <div className="flex items-center gap-3 text-[10px] uppercase tracking-[0.3em] text-white/40">
+              <Users size={14} />
+              <span>Suggested Souls</span>
+            </div>
+            <div className="space-y-4">
+              {suggestedSouls.map(soul => (
+                <div key={soul.id} className="flex items-center justify-between group">
+                  <div 
+                    onClick={() => setViewedProfileId(soul.id)}
+                    className="flex items-center gap-3 cursor-pointer"
+                  >
+                    <div className="w-8 h-8 rounded-full bg-white/5 border border-white/10 overflow-hidden">
+                      {soul.avatarUrl ? <img src={soul.avatarUrl} alt="" className="w-full h-full object-cover" /> : <UserIcon size={12} className="m-2 text-white/10" />}
+                    </div>
+                    <span className="text-[10px] text-white/60 group-hover:text-white transition-colors">{soul.username}</span>
                   </div>
-                  <div className="flex-1 text-left overflow-hidden">
-                    <div className="text-[10px] truncate group-hover:text-white transition-colors">{u.username}</div>
-                    {u.bio ? (
-                      <div className="text-[8px] text-white/20 truncate italic">{u.bio}</div>
-                    ) : (
-                      <div className="text-[8px] text-white/15">{posts.filter(p => p.userId === u.id).length} posts</div>
-                    )}
-                  </div>
-                  <ChevronRight size={10} className="opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0" />
-                </button>
+                  <button 
+                    onClick={() => handleFollow(soul.id)}
+                    className="text-[8px] uppercase tracking-widest text-white/40 hover:text-white transition-colors"
+                  >
+                    Follow
+                  </button>
+                </div>
               ))}
+              {suggestedSouls.length === 0 && (
+                <p className="text-[10px] text-white/20 italic">You've met everyone here.</p>
+              )}
             </div>
           </div>
         </aside>
       </main>
 
-      {/* Bottom Navigation */}
-      {!isZenMode && (
-        <nav className="fixed bottom-0 left-0 right-0 z-50 bg-black/60 backdrop-blur-2xl border-t border-white/5 px-6 py-4">
-          <div className="max-w-xl mx-auto flex items-center justify-between">
+      {/* Mobile Bottom Navigation */}
+      <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-50 bg-black/80 backdrop-blur-2xl border-t border-white/5 px-6 py-4">
+        <div className="flex items-center justify-between max-w-md mx-auto">
+          <button 
+            onClick={() => setActiveTab('home')}
+            className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'home' ? 'text-white' : 'text-white/30'}`}
+          >
+            <Home size={20} />
+            <span className="text-[8px] uppercase tracking-widest font-medium">Sanctuary</span>
+          </button>
+          <button 
+            onClick={() => setActiveTab('daily')}
+            className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'daily' ? 'text-white' : 'text-white/30'}`}
+          >
+            <BookOpen size={20} />
+            <span className="text-[8px] uppercase tracking-widest font-medium">Daily</span>
+          </button>
+          <div className="relative -top-8">
             <button 
-              onClick={() => setActiveTab('home')}
-              className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'home' ? 'text-white' : 'text-white/30 hover:text-white/50'}`}
+              onClick={() => { setWritingType('post'); setIsWriting(true); }}
+              className={`w-14 h-14 rounded-full ${currentTheme.bg} border ${currentTheme.accent} flex items-center justify-center ${currentTheme.glow} shadow-2xl transition-transform active:scale-95`}
             >
-              <Home size={20} />
-              <span className="text-[8px] uppercase tracking-widest">Home</span>
-            </button>
-            <button 
-              onClick={() => setActiveTab('daily')}
-              className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'daily' ? 'text-white' : 'text-white/30 hover:text-white/50'}`}
-            >
-              <BookOpen size={20} />
-              <span className="text-[8px] uppercase tracking-widest">Daily</span>
-            </button>
-            <button 
-              onClick={() => setActiveTab('profile')}
-              className={`flex flex-col items-center gap-1 transition-all relative ${activeTab === 'profile' ? 'text-white' : 'text-white/30 hover:text-white/50'}`}
-            >
-              <UserIcon size={20} />
-              {bookmarks.length > 0 && (
-                <div className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-white/40" />
-              )}
-              <span className="text-[8px] uppercase tracking-widest">Your Tab</span>
-            </button>
-            <button 
-              onClick={() => setActiveTab('analytics')}
-              className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'analytics' ? 'text-white' : 'text-white/30 hover:text-white/50'}`}
-            >
-              <BarChart3 size={20} />
-              <span className="text-[8px] uppercase tracking-widest">Analytics</span>
-            </button>
-            <button 
-              onClick={() => setActiveTab('settings')}
-              className={`flex flex-col items-center gap-1 transition-all relative ${activeTab === 'settings' ? 'text-white' : 'text-white/30 hover:text-white/50'}`}
-            >
-              <Settings size={20} />
-              {isZenMode && <div className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-white/40" />}
-              <span className="text-[8px] uppercase tracking-widest">Settings</span>
+              <Plus size={24} className="text-white" />
             </button>
           </div>
-        </nav>
-      )}
+          <button 
+            onClick={() => setActiveTab('analytics')}
+            className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'analytics' ? 'text-white' : 'text-white/30'}`}
+          >
+            <BarChart3 size={20} />
+            <span className="text-[8px] uppercase tracking-widest font-medium">Resonance</span>
+          </button>
+          <button 
+            onClick={() => user ? setViewedProfileId(user.id) : null}
+            className={`flex flex-col items-center gap-1 transition-all ${viewedProfileId === user?.id ? 'text-white' : 'text-white/30'}`}
+          >
+            <UserIcon size={20} />
+            <span className="text-[8px] uppercase tracking-widest font-medium">Profile</span>
+          </button>
+        </div>
+      </nav>
 
-      {/* Zen Mode Exit Button */}
-      {isZenMode && (
-        <motion.button
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          onClick={() => setIsZenMode(false)}
-          className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 bg-white/5 hover:bg-white/10 border border-white/10 px-5 py-2.5 rounded-full transition-all text-[9px] uppercase tracking-widest text-white/40 hover:text-white/70"
-        >
-          <EyeOff size={12} />
-          Exit Zen Mode
-        </motion.button>
-      )}
     </div>
     </ErrorBoundary>
   );

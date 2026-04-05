@@ -8,13 +8,44 @@
 
 @layer base {
   body {
-    @apply bg-[#0a0a0a] text-gray-200 font-sans selection:bg-white/10;
+    @apply bg-[#050505] text-gray-200 font-sans selection:bg-white/10;
     overflow-x: hidden;
   }
 
   h1, h2, h3, .poetry-content {
     @apply font-serif;
   }
+}
+
+.sanctuary-bg {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background: radial-gradient(circle at 50% 50%, #0a0a0a 0%, #050505 100%);
+  overflow: hidden;
+}
+
+.sanctuary-bg::before {
+  content: "";
+  position: absolute;
+  inset: -100%;
+  background-image: url("https://grainy-gradients.vercel.app/noise.svg");
+  opacity: 0.03;
+  pointer-events: none;
+  animation: noise 8s steps(10) infinite;
+}
+
+@keyframes noise {
+  0%, 100% { transform: translate(0, 0); }
+  10% { transform: translate(-5%, -5%); }
+  20% { transform: translate(-10%, 5%); }
+  30% { transform: translate(5%, -10%); }
+  40% { transform: translate(-5%, 15%); }
+  50% { transform: translate(-10%, 5%); }
+  60% { transform: translate(15%, 0); }
+  70% { transform: translate(0, 10%); }
+  80% { transform: translate(-15%, 0); }
+  90% { transform: translate(10%, 5%); }
 }
 
 .mirror-divider {
@@ -63,5 +94,14 @@
 }
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(255, 255, 255, 0.1);
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
 }
 
