@@ -25,7 +25,16 @@ import {
   BarChart3,
   Settings,
   Home,
-  MessageCircle
+  MessageCircle,
+  Search,
+  Bookmark,
+  TrendingUp,
+  Users,
+  Clock,
+  Zap,
+  Eye,
+  EyeOff,
+  Filter
 } from 'lucide-react';
 import { storage } from './services/storage';
 import { Post, Reflection, Reaction, User, Category, CATEGORIES, THEMES, Draft, Message } from './types';
@@ -37,7 +46,6 @@ import {
 } from 'firebase/auth';
 import { 
   collection, 
-  collectionGroup,
   onSnapshot, 
   query, 
   orderBy, 
@@ -104,9 +112,6 @@ class ErrorBoundary extends Component<any, any> {
 
 const AuthModal = ({ onLogin }: { onLogin: (user: User) => void }) => {
   const [isSigningIn, setIsSigningIn] = useState(false);
-  const [step, setStep] = useState<'login' | 'setup'>('login');
-  const [tempUser, setTempUser] = useState<User | null>(null);
-  const [username, setUsername] = useState('');
 
   const handleGoogleSignIn = async () => {
     setIsSigningIn(true);
@@ -114,13 +119,11 @@ const AuthModal = ({ onLogin }: { onLogin: (user: User) => void }) => {
       const result = await signInWithPopup(auth, googleProvider);
       const firebaseUser = result.user;
       
-      // Check if user exists in Firestore
       const userDoc = await storage.getUserById(firebaseUser.uid);
       if (userDoc) {
         storage.setCurrentUser(userDoc);
         onLogin(userDoc);
       } else {
-        // Prepare new user but don't save yet
         const newUser: User = {
           id: firebaseUser.uid,
           username: firebaseUser.displayName || `Soul_${firebaseUser.uid.slice(0, 5)}`,
@@ -128,27 +131,12 @@ const AuthModal = ({ onLogin }: { onLogin: (user: User) => void }) => {
           joinDate: Date.now(),
           following: []
         };
-        setTempUser(newUser);
-        setUsername(newUser.username);
-        setStep('setup');
+        await storage.saveUser(newUser);
+        storage.setCurrentUser(newUser);
+        onLogin(newUser);
       }
     } catch (error) {
       console.error("Sign in error:", error);
-    } finally {
-      setIsSigningIn(false);
-    }
-  };
-
-  const handleCompleteSetup = async () => {
-    if (!tempUser || !username.trim()) return;
-    setIsSigningIn(true);
-    try {
-      const finalUser = { ...tempUser, username: username.trim() };
-      await storage.saveUser(finalUser);
-      storage.setCurrentUser(finalUser);
-      onLogin(finalUser);
-    } catch (error) {
-      console.error("Setup error:", error);
     } finally {
       setIsSigningIn(false);
     }
@@ -170,61 +158,30 @@ const AuthModal = ({ onLogin }: { onLogin: (user: User) => void }) => {
             <Feather size={32} className="text-white/40" />
           </div>
         </div>
-
-        {step === 'login' ? (
-          <>
-            <h2 className="text-3xl font-serif mb-3">Enter Serein</h2>
-            <p className="text-white/40 mb-10 text-sm leading-relaxed">
-              A quiet space for your thoughts, shared in the soft light of the sanctuary.
-            </p>
-            
-            <button 
-              onClick={handleGoogleSignIn}
-              disabled={isSigningIn}
-              className="w-full bg-white text-black py-4 rounded-2xl font-medium hover:bg-gray-200 transition-all flex items-center justify-center gap-3 disabled:opacity-50"
-            >
-              {isSigningIn ? (
-                <div className="w-5 h-5 border-2 border-black/20 border-t-black rounded-full animate-spin" />
-              ) : (
-                <>
-                  <svg className="w-5 h-5" viewBox="0 0 24 24">
-                    <path fill="currentColor" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
-                    <path fill="currentColor" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
-                    <path fill="currentColor" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z" />
-                    <path fill="currentColor" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
-                  </svg>
-                  <span>Continue with Google</span>
-                </>
-              )}
-            </button>
-          </>
-        ) : (
-          <>
-            <h2 className="text-2xl font-serif mb-3">Choose Your Name</h2>
-            <p className="text-white/40 mb-8 text-sm leading-relaxed">
-              How should your soul be known in the sanctuary?
-            </p>
-            
-            <div className="mb-8">
-              <input 
-                type="text" 
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                className="w-full bg-white/5 border border-white/10 rounded-2xl p-4 text-center text-lg focus:outline-none focus:border-white/30"
-                placeholder="Your sanctuary name..."
-                autoFocus
-              />
-            </div>
-
-            <button 
-              onClick={handleCompleteSetup}
-              disabled={isSigningIn || !username.trim()}
-              className="w-full bg-white text-black py-4 rounded-2xl font-medium hover:bg-gray-200 transition-all disabled:opacity-50"
-            >
-              {isSigningIn ? 'Entering...' : 'Begin Journey'}
-            </button>
-          </>
-        )}
+        <h2 className="text-3xl font-serif mb-3">Enter Serein</h2>
+        <p className="text-white/40 mb-10 text-sm leading-relaxed">
+          A quiet space for your thoughts, shared in the soft light of the sanctuary.
+        </p>
+        
+        <button 
+          onClick={handleGoogleSignIn}
+          disabled={isSigningIn}
+          className="w-full bg-white text-black py-4 rounded-2xl font-medium hover:bg-gray-200 transition-all flex items-center justify-center gap-3 disabled:opacity-50"
+        >
+          {isSigningIn ? (
+            <div className="w-5 h-5 border-2 border-black/20 border-t-black rounded-full animate-spin" />
+          ) : (
+            <>
+              <svg className="w-5 h-5" viewBox="0 0 24 24">
+                <path fill="currentColor" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
+                <path fill="currentColor" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
+                <path fill="currentColor" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z" />
+                <path fill="currentColor" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
+              </svg>
+              <span>Continue with Google</span>
+            </>
+          )}
+        </button>
         
         <p className="mt-8 text-[10px] uppercase tracking-widest text-white/20">
           By entering, you agree to the silence of the sanctuary.
@@ -254,6 +211,8 @@ const WritingMode = ({
   const [showDrafts, setShowDrafts] = useState(false);
   const [drafts, setDrafts] = useState<Draft[]>([]);
 
+  const wordCount = content.trim() ? content.trim().split(/\s+/).length : 0;
+
   useEffect(() => {
     if (currentUser && type === 'post') {
       setDrafts(storage.getDrafts(currentUser.id));
@@ -264,7 +223,6 @@ const WritingMode = ({
     if (!content.trim()) return;
     onPost(content, category, isAnonymous, postType);
     if (currentUser && !initialData) {
-      // If it was a draft, delete it after posting
       const existingDraft = drafts.find(d => d.content === content);
       if (existingDraft) storage.deleteDraft(existingDraft.id);
     }
@@ -353,7 +311,7 @@ const WritingMode = ({
         />
 
         <div className="mt-8 flex justify-between items-center">
-          <div className="flex gap-4">
+          <div className="flex gap-4 items-center">
             {type === 'post' && currentUser && (
               <>
                 <button 
@@ -373,6 +331,12 @@ const WritingMode = ({
                   </button>
                 )}
               </>
+            )}
+            {wordCount > 0 && (
+              <span className="text-[9px] uppercase tracking-widest text-white/15 flex items-center gap-1">
+                <Clock size={10} />
+                {wordCount}w
+              </span>
             )}
           </div>
           <button 
@@ -438,24 +402,19 @@ const ProfileView = ({
 }) => {
   const [profileUser, setProfileUser] = useState<User | null>(null);
   const [userPosts, setUserPosts] = useState<Post[]>([]);
-  const [isEditingProfile, setIsEditingProfile] = useState(false);
-  const [username, setUsername] = useState('');
+  const [isEditingBio, setIsEditingBio] = useState(false);
   const [bio, setBio] = useState('');
   const [avatarUrl, setAvatarUrl] = useState('');
   const [isFollowing, setIsFollowing] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchProfile = async () => {
       const u = await storage.getUserById(userId);
       if (u) {
         setProfileUser(u);
-        setUsername(u.username || '');
         setBio(u.bio || '');
         setAvatarUrl(u.avatarUrl || '');
         
-        // Fetch user posts
         const postsQuery = query(
           collection(db, 'posts'), 
           where('userId', '==', userId),
@@ -495,25 +454,10 @@ const ProfileView = ({
 
   const handleSaveProfile = async () => {
     if (!profileUser) return;
-    if (!username.trim()) {
-      setError("A soul must have a name.");
-      return;
-    }
-    
-    setIsSaving(true);
-    setError(null);
-    
-    try {
-      const updatedUser = { ...profileUser, username: username.trim(), bio, avatarUrl };
-      await storage.updateUser(updatedUser);
-      setProfileUser(updatedUser);
-      onUpdateUser(updatedUser);
-      setIsEditingProfile(false);
-    } catch (err) {
-      setError("The sanctuary could not save your identity.");
-    } finally {
-      setIsSaving(false);
-    }
+    const updatedUser = { ...profileUser, bio, avatarUrl };
+    await storage.updateUser(updatedUser);
+    setProfileUser(updatedUser);
+    setIsEditingBio(false);
   };
 
   if (!profileUser) return null;
@@ -570,24 +514,13 @@ const ProfileView = ({
         <div className="mb-12">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-xs uppercase tracking-widest text-white/50">Soul Identity</h3>
-            {currentUser?.id === userId && !isEditingProfile && (
-              <button onClick={() => setIsEditingProfile(true)} className="text-[10px] uppercase tracking-widest hover:text-white transition-colors">Edit Identity</button>
+            {currentUser?.id === userId && !isEditingBio && (
+              <button onClick={() => setIsEditingBio(true)} className="text-[10px] uppercase tracking-widest hover:text-white transition-colors">Edit</button>
             )}
           </div>
           
-          {isEditingProfile ? (
+          {isEditingBio ? (
             <div className="space-y-4">
-              {error && <p className="text-red-400 text-[10px] uppercase tracking-widest">{error}</p>}
-              <div>
-                <label className="block text-[10px] uppercase tracking-widest text-white/30 mb-2">Username</label>
-                <input 
-                  type="text" 
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
-                  className="w-full bg-white/5 border border-white/10 rounded-lg p-3 text-sm focus:outline-none focus:border-white/30"
-                  placeholder="Your sanctuary name..."
-                />
-              </div>
               <div>
                 <label className="block text-[10px] uppercase tracking-widest text-white/30 mb-2">Avatar URL</label>
                 <input 
@@ -608,26 +541,8 @@ const ProfileView = ({
                 />
               </div>
               <div className="flex justify-end gap-4">
-                <button 
-                  onClick={() => {
-                    setIsEditingProfile(false);
-                    setUsername(profileUser.username);
-                    setBio(profileUser.bio || '');
-                    setAvatarUrl(profileUser.avatarUrl || '');
-                    setError(null);
-                  }} 
-                  className="text-xs uppercase tracking-widest text-white/30 hover:text-white"
-                  disabled={isSaving}
-                >
-                  Cancel
-                </button>
-                <button 
-                  onClick={handleSaveProfile} 
-                  disabled={isSaving}
-                  className="text-xs uppercase tracking-widest bg-white text-black px-4 py-2 rounded-full disabled:opacity-50"
-                >
-                  {isSaving ? 'Saving...' : 'Save'}
-                </button>
+                <button onClick={() => setIsEditingBio(false)} className="text-xs uppercase tracking-widest text-white/30 hover:text-white">Cancel</button>
+                <button onClick={handleSaveProfile} className="text-xs uppercase tracking-widest bg-white text-black px-4 py-2 rounded-full">Save</button>
               </div>
             </div>
           ) : (
@@ -769,6 +684,9 @@ const SanctuaryInsights = ({
   );
 };
 
+// --- Helpers ---
+const readingTime = (content: string) => Math.max(1, Math.ceil(content.trim().split(/\s+/).length / 200));
+
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [posts, setPosts] = useState<Post[]>([]);
@@ -791,13 +709,81 @@ export default function App() {
   const [isLoaded, setIsLoaded] = useState(false);
   const [openReflectionPostId, setOpenReflectionPostId] = useState<string | null>(null);
 
+  // --- New Feature State ---
+  const [isZenMode, setIsZenMode] = useState(false);
+  const [bookmarks, setBookmarks] = useState<string[]>([]);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [showSearch, setShowSearch] = useState(false);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
+  // Load bookmarks from localStorage when user logs in
+  useEffect(() => {
+    if (user) {
+      try {
+        const saved = JSON.parse(localStorage.getItem(`serein_bookmarks_${user.id}`) || '[]');
+        setBookmarks(saved);
+      } catch {
+        setBookmarks([]);
+      }
+    } else {
+      setBookmarks([]);
+    }
+  }, [user?.id]);
+
+  // Focus search input when opened
+  useEffect(() => {
+    if (showSearch && searchInputRef.current) {
+      searchInputRef.current.focus();
+    }
+  }, [showSearch]);
+
+  const toggleBookmark = (postId: string) => {
+    if (!user) return;
+    const updated = bookmarks.includes(postId)
+      ? bookmarks.filter(id => id !== postId)
+      : [...bookmarks, postId];
+    setBookmarks(updated);
+    localStorage.setItem(`serein_bookmarks_${user.id}`, JSON.stringify(updated));
+  };
+
   const filteredPosts = useMemo(() => {
     if (!selectedCategory) return posts;
     return posts.filter(p => p.category === selectedCategory);
   }, [posts, selectedCategory]);
 
+  // Search filters on top of category filter
+  const searchedPosts = useMemo(() => {
+    if (!searchQuery.trim()) return filteredPosts;
+    const q = searchQuery.toLowerCase();
+    return filteredPosts.filter(p =>
+      p.content.toLowerCase().includes(q) ||
+      (!p.isAnonymous && p.username.toLowerCase().includes(q)) ||
+      p.category.toLowerCase().includes(q) ||
+      p.type.toLowerCase().includes(q)
+    );
+  }, [filteredPosts, searchQuery]);
+
+  const bookmarkedPosts = useMemo(() => posts.filter(p => bookmarks.includes(p.id)), [posts, bookmarks]);
+
+  const trendingCategories = useMemo(() => {
+    const counts: Record<string, number> = {};
+    posts.forEach(p => { counts[p.category] = (counts[p.category] || 0) + 1; });
+    return Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 5);
+  }, [posts]);
+
+  const categoryPostCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    posts.forEach(p => { counts[p.category] = (counts[p.category] || 0) + 1; });
+    return counts;
+  }, [posts]);
+
+  const reactionCountsByType = useMemo(() => {
+    const counts: Record<string, number> = { felt: 0, heavy: 0, beautiful: 0, haunting: 0 };
+    reactions.forEach(r => { if (r.postId === selectedPost?.id) counts[r.type] = (counts[r.type] || 0) + 1; });
+    return counts;
+  }, [reactions, selectedPost]);
+
   useEffect(() => {
-    document.title = "serein";
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
         const u = await storage.getUserById(firebaseUser.uid);
@@ -867,23 +853,26 @@ export default function App() {
   };
 
   useEffect(() => {
-    if (!isAuthReady) return;
+    if (!selectedPost || !isAuthReady) return;
 
-    const reflectionsQuery = collectionGroup(db, 'reflections');
+    const reflectionsQuery = query(
+      collection(db, 'posts', selectedPost.id, 'reflections'), 
+      orderBy('createdAt', 'asc')
+    );
     const unsubscribeReflections = onSnapshot(reflectionsQuery, (snapshot) => {
       setReflections(snapshot.docs.map(doc => doc.data() as Reflection));
-    }, (error) => handleFirestoreError(error, OperationType.LIST, 'reflections'));
+    }, (error) => handleFirestoreError(error, OperationType.LIST, `posts/${selectedPost.id}/reflections`));
 
-    const reactionsQuery = collectionGroup(db, 'reactions');
+    const reactionsQuery = collection(db, 'posts', selectedPost.id, 'reactions');
     const unsubscribeReactions = onSnapshot(reactionsQuery, (snapshot) => {
       setReactions(snapshot.docs.map(doc => doc.data() as Reaction));
-    }, (error) => handleFirestoreError(error, OperationType.LIST, 'reactions'));
+    }, (error) => handleFirestoreError(error, OperationType.LIST, `posts/${selectedPost.id}/reactions`));
 
     return () => {
       unsubscribeReflections();
       unsubscribeReactions();
     };
-  }, [isAuthReady]);
+  }, [selectedPost, isAuthReady]);
 
   const handleSendMessage = async () => {
     if (!user || !activeChatUserId || !messageText.trim()) return;
@@ -962,7 +951,6 @@ export default function App() {
   const handleReaction = async (type: Reaction['type'], e: React.MouseEvent) => {
     if (!user || !selectedPost) return;
     
-    // Ripple effect
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
     setRipple({ x: e.clientX, y: e.clientY });
     setTimeout(() => setRipple(null), 1000);
@@ -1053,21 +1041,27 @@ export default function App() {
               <Feather size={12} className="text-white/80" />
             </div>
             <h1 className="text-lg font-serif tracking-[0.2em] uppercase">Serein</h1>
+            {isZenMode && (
+              <span className="text-[8px] uppercase tracking-widest text-white/20 border border-white/10 px-2 py-0.5 rounded-full">
+                Zen
+              </span>
+            )}
           </div>
           
-          <div className="flex items-center gap-4">
-            {user && (
-              <button 
-                onClick={() => setViewedProfileId(user.id)}
-                className="w-8 h-8 rounded-full bg-white/5 border border-white/10 overflow-hidden flex items-center justify-center hover:border-white/30 transition-all"
-              >
-                {user.avatarUrl ? <img src={user.avatarUrl} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" /> : <UserIcon size={14} className="text-white/20" />}
-              </button>
-            )}
+          <div className="flex items-center gap-3">
+            {/* Search Toggle */}
+            <button
+              onClick={() => { setShowSearch(!showSearch); if (showSearch) setSearchQuery(''); }}
+              className={`p-2 rounded-full transition-all border ${showSearch ? 'bg-white/10 border-white/20 text-white' : 'bg-white/5 border-white/5 text-white/40 hover:text-white/60'}`}
+              title="Search"
+            >
+              <Search size={14} />
+            </button>
+
             {user && (
               <button 
                 onClick={handleLogout}
-                className="text-[10px] uppercase tracking-widest text-white/30 hover:text-white transition-colors"
+                className="text-[10px] uppercase tracking-widest text-white/30 hover:text-white transition-colors hidden sm:block"
               >
                 Logout
               </button>
@@ -1082,32 +1076,68 @@ export default function App() {
           </div>
         </div>
 
-        {/* Category Filter - Fixed under Nav, No Scroll */}
-        <div className="w-full bg-black/40 backdrop-blur-xl border-b border-white/5 pointer-events-auto">
-          <div className="max-w-xl mx-auto px-4 py-3">
-            <div className="flex flex-wrap items-center justify-center gap-2">
-              <button 
-                onClick={() => setSelectedCategory(null)}
-                className={`px-3 py-1 rounded-full text-[8px] uppercase tracking-widest transition-all border ${!selectedCategory ? `bg-white/10 border-white/20 text-white ${currentTheme.glow}` : 'bg-white/5 border-white/5 text-white/40 hover:text-white/60'}`}
-              >
-                All
-              </button>
-              {CATEGORIES.slice(0, 6).map(cat => (
+        {/* Search Bar */}
+        <AnimatePresence>
+          {showSearch && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              className="bg-black/60 backdrop-blur-2xl border-b border-white/5 pointer-events-auto overflow-hidden"
+            >
+              <div className="max-w-xl mx-auto px-4 py-3 flex items-center gap-3">
+                <Search size={14} className="text-white/30 flex-shrink-0" />
+                <input
+                  ref={searchInputRef}
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Search expressions, souls, or themes..."
+                  className="flex-1 bg-transparent text-sm focus:outline-none placeholder:text-white/20"
+                />
+                {searchQuery && (
+                  <button onClick={() => setSearchQuery('')} className="text-white/30 hover:text-white transition-colors">
+                    <X size={14} />
+                  </button>
+                )}
+                {searchQuery && (
+                  <span className="text-[9px] uppercase tracking-widest text-white/20 flex-shrink-0">
+                    {searchedPosts.length} found
+                  </span>
+                )}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Category Filter — hidden in Zen Mode */}
+        {!isZenMode && (
+          <div className="w-full bg-black/40 backdrop-blur-xl border-b border-white/5 pointer-events-auto">
+            <div className="max-w-xl mx-auto px-4 py-3">
+              <div className="flex items-center gap-2 overflow-x-auto scrollbar-hide py-1">
                 <button 
-                  key={cat}
-                  onClick={() => setSelectedCategory(cat)}
-                  className={`px-3 py-1 rounded-full text-[8px] uppercase tracking-widest transition-all border whitespace-nowrap ${selectedCategory === cat ? `bg-white/10 border-white/20 text-white ${currentTheme.glow}` : 'bg-white/5 border-white/5 text-white/40 hover:text-white/60'}`}
+                  onClick={() => setSelectedCategory(null)}
+                  className={`px-3 py-1 rounded-full text-[8px] uppercase tracking-widest transition-all border flex-shrink-0 ${!selectedCategory ? `bg-white/10 border-white/20 text-white ${currentTheme.glow}` : 'bg-white/5 border-white/5 text-white/40 hover:text-white/60'}`}
                 >
-                  {cat}
+                  All
                 </button>
-              ))}
+                {CATEGORIES.slice(0, 6).map(cat => (
+                  <button 
+                    key={cat}
+                    onClick={() => setSelectedCategory(cat)}
+                    className={`px-3 py-1 rounded-full text-[8px] uppercase tracking-widest transition-all border whitespace-nowrap ${selectedCategory === cat ? `bg-white/10 border-white/20 text-white ${currentTheme.glow}` : 'bg-white/5 border-white/5 text-white/40 hover:text-white/60'}`}
+                  >
+                    {cat}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
-        </div>
+        )}
       </nav>
 
       {/* Main Sanctuary Content */}
-      <main className="flex flex-1 pt-32 pb-24 overflow-hidden relative justify-center">
+      <main className={`flex flex-1 ${isZenMode ? 'pt-20' : 'pt-32'} pb-24 overflow-hidden relative justify-center transition-all duration-500`}>
         
         {/* Ripple Overlay */}
         {ripple && (
@@ -1131,15 +1161,17 @@ export default function App() {
                 <div className="w-full flex items-center justify-between px-4 opacity-30">
                   <div className="flex items-center gap-4 text-[9px] uppercase tracking-[0.3em]">
                     <div className={`w-2 h-2 rounded-full ${currentTheme.bg} border ${currentTheme.accent} animate-pulse`} />
-                    <span>{selectedCategory || 'Sanctuary Feed'}</span>
+                    <span>
+                      {searchQuery ? `"${searchQuery}"` : selectedCategory || 'Sanctuary Feed'}
+                    </span>
                   </div>
                   <div className="text-[9px] uppercase tracking-[0.3em]">
                     {new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric' })}
                   </div>
                 </div>
 
-                {filteredPosts.length > 0 ? (
-                  filteredPosts.map((post, idx) => (
+                {searchedPosts.length > 0 ? (
+                  searchedPosts.map((post, idx) => (
                     <motion.div 
                       key={post.id}
                       initial={{ opacity: 0, y: 30 }}
@@ -1148,20 +1180,24 @@ export default function App() {
                       transition={{ duration: 0.8, delay: Math.min(idx * 0.1, 0.3) }}
                       className="w-full flex flex-col items-center"
                     >
-                      {/* The "Card" Structure */}
                       <div className="w-full relative group">
                         {/* Background Glow */}
                         <div className={`absolute -inset-4 ${currentTheme.bg} opacity-[0.03] blur-3xl rounded-[3rem] pointer-events-none transition-all duration-1000 group-hover:opacity-[0.07]`} />
                         
                         <div className={`w-full bg-white/[0.03] backdrop-blur-sm border border-white/10 rounded-[2.5rem] p-8 md:p-10 relative overflow-hidden transition-all duration-500 hover:bg-white/[0.05] ${currentTheme.glow}`}>
-                          {/* Subtle inner glow/gradient */}
                           <div className={`absolute inset-0 bg-gradient-to-br from-white/[0.02] to-transparent pointer-events-none`} />
                         
                         <div className="relative z-10 space-y-6">
+                          {/* Post Header */}
                           <div className="flex items-center justify-between text-[10px] uppercase tracking-[0.4em] text-white/30">
                             <div className="flex items-center gap-3">
                               <div className="h-px w-4 bg-white/10" />
                               <span>{post.category}</span>
+                              <span className="text-white/15">·</span>
+                              <span className="flex items-center gap-1 text-white/15">
+                                <Clock size={8} />
+                                {readingTime(post.content)}m
+                              </span>
                             </div>
                             
                             <div className="flex items-center gap-4">
@@ -1200,11 +1236,13 @@ export default function App() {
                             </div>
                           </div>
 
+                          {/* Post Content */}
                           <div className="poetry-content text-lg md:text-xl leading-[1.8] whitespace-pre-wrap italic font-serif text-white/90">
                             {post.type === 'quote' && <Quote className="mb-6 opacity-10" size={28} />}
                             {post.content}
                           </div>
 
+                          {/* Reactions & Actions */}
                           <div className="pt-6 flex flex-wrap items-center justify-between gap-6 border-t border-white/5">
                             <div className="flex flex-wrap gap-4 md:gap-8">
                               {(['felt', 'heavy', 'beautiful', 'haunting'] as const).map(type => {
@@ -1228,8 +1266,18 @@ export default function App() {
                               })}
                             </div>
 
-                            <div className="flex items-center gap-8">
+                            <div className="flex items-center gap-4">
                               <div className="h-6 w-px bg-white/10" />
+
+                              {/* Bookmark Button — NEW */}
+                              <button
+                                onClick={() => toggleBookmark(post.id)}
+                                className={`p-2.5 rounded-full border transition-all ${bookmarks.includes(post.id) ? `border-white/40 bg-white/5 text-white ${currentTheme.glow}` : 'border-white/5 text-white/20 hover:text-white/40 hover:border-white/10'}`}
+                                title={bookmarks.includes(post.id) ? 'Remove bookmark' : 'Save to bookmarks'}
+                              >
+                                <Bookmark size={15} fill={bookmarks.includes(post.id) ? 'currentColor' : 'none'} />
+                              </button>
+
                               <button 
                                 onClick={() => setOpenReflectionPostId(openReflectionPostId === post.id ? null : post.id)}
                                 className={`flex items-center gap-3 group transition-all ${openReflectionPostId === post.id ? 'text-white' : 'text-white/20 hover:text-white/40'}`}
@@ -1284,7 +1332,6 @@ export default function App() {
                                       </div>
                                       <p className="text-sm font-serif italic text-white/60">"{ref.content}"</p>
                                       
-                                      {/* Replies */}
                                       {reflections.filter(r => r.parentId === ref.id).map(reply => (
                                         <div key={reply.id} className="mt-3 ml-4 pl-4 border-l border-white/5">
                                           <div className="text-[7px] uppercase tracking-widest text-white/20 mb-1">{reply.username}</div>
@@ -1312,7 +1359,7 @@ export default function App() {
                 ))
                 ) : (
                   <div className="h-full flex items-center justify-center text-white/10 italic font-serif text-xl py-32">
-                    The sky is clear. No rain yet.
+                    {searchQuery ? `No expressions match "${searchQuery}"` : 'The sky is clear. No rain yet.'}
                   </div>
                 )}
               </motion.div>
@@ -1331,15 +1378,44 @@ export default function App() {
                   <p className="text-xs uppercase tracking-[0.3em] text-white/20">Curated for your sanctuary</p>
                 </div>
 
+                {/* Sanctuary Insights Widget — on mobile/tablet where sidebar is hidden */}
+                <div className="2xl:hidden">
+                  <SanctuaryInsights
+                    poem={poemOfTheDay}
+                    thought={thoughtOfTheDay}
+                    mostFelt={mostFelt}
+                    onSelect={(post) => { setSelectedPost(post); setActiveTab('home'); }}
+                    categories={CATEGORIES}
+                    posts={posts}
+                  />
+                </div>
+
                 <div className="space-y-8">
                   <div className="bg-white/[0.03] border border-white/10 rounded-3xl p-8 space-y-6">
                     <div className="flex items-center gap-3 text-[10px] uppercase tracking-widest text-white/30">
                       <BookOpen size={14} />
                       <span>Poem of the Day</span>
                     </div>
-                    <div className="poetry-content text-xl leading-relaxed italic text-white/90 whitespace-pre-wrap">
-                      {poemOfTheDay?.content}
-                    </div>
+                    {poemOfTheDay ? (
+                      <>
+                        <div className="poetry-content text-xl leading-relaxed italic text-white/90 whitespace-pre-wrap">
+                          {poemOfTheDay.content}
+                        </div>
+                        <div className="flex items-center justify-between pt-4 border-t border-white/5">
+                          <span className="text-[9px] uppercase tracking-widest text-white/20">
+                            — {poemOfTheDay.isAnonymous ? 'Shadow' : poemOfTheDay.username}
+                          </span>
+                          <button
+                            onClick={() => { setSelectedPost(poemOfTheDay); setActiveTab('home'); }}
+                            className="text-[9px] uppercase tracking-widest text-white/30 hover:text-white transition-colors flex items-center gap-1"
+                          >
+                            Read more <ChevronRight size={10} />
+                          </button>
+                        </div>
+                      </>
+                    ) : (
+                      <p className="text-white/20 italic">No poems have been shared yet.</p>
+                    )}
                   </div>
 
                   <div className="bg-white/[0.03] border border-white/10 rounded-3xl p-8 space-y-6">
@@ -1347,9 +1423,73 @@ export default function App() {
                       <Quote size={14} />
                       <span>Thought of the Day</span>
                     </div>
-                    <p className="text-lg font-serif italic text-white/70 leading-relaxed">
-                      "{thoughtOfTheDay?.content}"
-                    </p>
+                    {thoughtOfTheDay ? (
+                      <>
+                        <p className="text-lg font-serif italic text-white/70 leading-relaxed">
+                          "{thoughtOfTheDay.content}"
+                        </p>
+                        <div className="flex items-center justify-between pt-4 border-t border-white/5">
+                          <span className="text-[9px] uppercase tracking-widest text-white/20">
+                            — {thoughtOfTheDay.isAnonymous ? 'Shadow' : thoughtOfTheDay.username}
+                          </span>
+                          <span className="text-[9px] uppercase tracking-widest text-white/15">{thoughtOfTheDay.category}</span>
+                        </div>
+                      </>
+                    ) : (
+                      <p className="text-white/20 italic">No thoughts have been shared yet.</p>
+                    )}
+                  </div>
+
+                  {/* Discover Souls — on mobile/tablet */}
+                  <div className="2xl:hidden bg-white/[0.03] border border-white/10 rounded-3xl p-8 space-y-6">
+                    <div className="flex items-center gap-3 text-[10px] uppercase tracking-widest text-white/30">
+                      <Users size={14} />
+                      <span>Souls in the Sanctuary</span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      {allUsers.slice(0, 6).map(u => (
+                        <button
+                          key={u.id}
+                          onClick={() => setViewedProfileId(u.id)}
+                          className="flex items-center gap-3 p-3 bg-white/[0.02] border border-white/5 rounded-2xl hover:bg-white/5 transition-all text-left group"
+                        >
+                          <div className="w-8 h-8 rounded-full bg-white/5 border border-white/10 overflow-hidden flex-shrink-0">
+                            {u.avatarUrl ? <img src={u.avatarUrl} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" /> : <UserIcon size={12} className="m-2 text-white/20" />}
+                          </div>
+                          <div className="overflow-hidden">
+                            <div className="text-[10px] text-white/60 truncate group-hover:text-white transition-colors">{u.username}</div>
+                            <div className="text-[8px] text-white/20 truncate">{posts.filter(p => p.userId === u.id).length} expressions</div>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Trending Themes — on mobile/tablet */}
+                  <div className="2xl:hidden bg-white/[0.03] border border-white/10 rounded-3xl p-8 space-y-6">
+                    <div className="flex items-center gap-3 text-[10px] uppercase tracking-widest text-white/30">
+                      <TrendingUp size={14} />
+                      <span>Resonating Themes</span>
+                    </div>
+                    <div className="space-y-4">
+                      {trendingCategories.map(([cat, count], i) => (
+                        <button
+                          key={cat}
+                          onClick={() => { setSelectedCategory(cat); setActiveTab('home'); }}
+                          className="w-full flex items-center gap-4 group text-white/40 hover:text-white/70 transition-colors"
+                        >
+                          <span className="text-[9px] text-white/15 w-4">{i + 1}</span>
+                          <span className="text-[10px] uppercase tracking-widest flex-1 text-left">{cat}</span>
+                          <div className="flex items-center gap-2">
+                            <div
+                              className="h-px bg-white/10 rounded transition-all group-hover:bg-white/20"
+                              style={{ width: `${Math.min(80, (count / (posts.length || 1)) * 300)}px` }}
+                            />
+                            <span className="text-[8px] text-white/20 tabular-nums w-6 text-right">{count}</span>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 </div>
               </motion.div>
@@ -1372,16 +1512,19 @@ export default function App() {
                     )}
                   </div>
                   <div className="space-y-2">
-                    <div className="flex items-center gap-4">
-                      <h2 className="text-2xl font-serif text-white/80">{user?.username}</h2>
-                      <button 
-                        onClick={() => setViewedProfileId(user?.id || null)}
-                        className="text-[10px] uppercase tracking-widest text-white/30 hover:text-white transition-colors"
-                      >
-                        Edit Identity
-                      </button>
-                    </div>
+                    <h2 className="text-2xl font-serif text-white/80">{user?.username}</h2>
                     <p className="text-[10px] uppercase tracking-widest text-white/20">Member since {new Date(user?.joinDate || 0).toLocaleDateString()}</p>
+                    <div className="flex items-center gap-4 pt-1">
+                      <span className="text-[9px] text-white/30">
+                        <span className="text-white/60 font-medium">{posts.filter(p => p.userId === user?.id).length}</span> expressions
+                      </span>
+                      <span className="text-[9px] text-white/30">
+                        <span className="text-white/60 font-medium">{user?.following?.length || 0}</span> following
+                      </span>
+                      <span className="text-[9px] text-white/30">
+                        <span className="text-white/60 font-medium">{bookmarks.length}</span> saved
+                      </span>
+                    </div>
                   </div>
                 </div>
 
@@ -1389,7 +1532,6 @@ export default function App() {
                 <div className="space-y-8">
                   <h3 className="text-xs uppercase tracking-[0.4em] text-white/30 border-b border-white/5 pb-4">Sanctuary Whispers</h3>
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                    {/* Chat List */}
                     <div className="md:col-span-1 space-y-2">
                       {getChatPartners().length > 0 ? (
                         getChatPartners().map(partnerId => {
@@ -1419,7 +1561,6 @@ export default function App() {
                       )}
                     </div>
 
-                    {/* Chat Window */}
                     <div className="md:col-span-2 bg-white/[0.02] border border-white/5 rounded-2xl flex flex-col h-[400px]">
                       {activeChatUserId ? (
                         <>
@@ -1494,6 +1635,47 @@ export default function App() {
                   )}
                 </div>
 
+                {/* Bookmarks Section — NEW */}
+                <div className="space-y-8">
+                  <h3 className="text-xs uppercase tracking-[0.4em] text-white/30 border-b border-white/5 pb-4 flex items-center gap-2">
+                    <Bookmark size={12} />
+                    Saved Expressions ({bookmarkedPosts.length})
+                  </h3>
+                  {bookmarkedPosts.length > 0 ? (
+                    <div className="space-y-4">
+                      {bookmarkedPosts.map(post => (
+                        <div key={post.id} className="bg-white/[0.02] border border-white/5 p-6 rounded-2xl space-y-3 group">
+                          <div className="flex items-center justify-between">
+                            <div className="text-[9px] uppercase tracking-widest text-white/20">{post.category} · {post.type}</div>
+                            <button
+                              onClick={() => toggleBookmark(post.id)}
+                              className="text-white/20 hover:text-white transition-colors opacity-0 group-hover:opacity-100"
+                              title="Remove bookmark"
+                            >
+                              <X size={12} />
+                            </button>
+                          </div>
+                          <p className="font-serif italic text-white/60 line-clamp-3">"{post.content}"</p>
+                          <div className="flex items-center justify-between">
+                            <span className="text-[8px] text-white/15">— {post.isAnonymous ? 'Shadow' : post.username}</span>
+                            <button 
+                              onClick={() => { setSelectedPost(post); setActiveTab('home'); }}
+                              className="text-[8px] uppercase tracking-widest text-white/30 hover:text-white transition-colors flex items-center gap-1"
+                            >
+                              Read <ChevronRight size={8} />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-center py-8 text-white/10 italic text-xs">
+                      Save expressions by tapping the bookmark icon on any post.
+                    </div>
+                  )}
+                </div>
+
+                {/* Your Expressions */}
                 <div className="space-y-8">
                   <h3 className="text-xs uppercase tracking-[0.4em] text-white/30 border-b border-white/5 pb-4">Your Expressions</h3>
                   {posts.filter(p => p.userId === user?.id).length > 0 ? (
@@ -1529,6 +1711,7 @@ export default function App() {
                   <p className="text-xs uppercase tracking-[0.3em] text-white/20">How your thoughts echo in the sanctuary</p>
                 </div>
 
+                {/* Stats Grid */}
                 <div className="grid grid-cols-2 gap-4">
                   <div className="bg-white/[0.03] border border-white/10 p-6 rounded-2xl space-y-2">
                     <div className="text-2xl font-serif text-white/80">{posts.filter(p => p.userId === user?.id).length}</div>
@@ -1540,8 +1723,72 @@ export default function App() {
                     </div>
                     <div className="text-[8px] uppercase tracking-widest text-white/30">Total Echoes Received</div>
                   </div>
+                  <div className="bg-white/[0.03] border border-white/10 p-6 rounded-2xl space-y-2">
+                    <div className="text-2xl font-serif text-white/80">{bookmarks.length}</div>
+                    <div className="text-[8px] uppercase tracking-widest text-white/30">Saved Expressions</div>
+                  </div>
+                  <div className="bg-white/[0.03] border border-white/10 p-6 rounded-2xl space-y-2">
+                    <div className="text-2xl font-serif text-white/80">{user?.following?.length || 0}</div>
+                    <div className="text-[8px] uppercase tracking-widest text-white/30">Following</div>
+                  </div>
                 </div>
 
+                {/* Post Type Breakdown — NEW */}
+                <div className="bg-white/[0.03] border border-white/10 p-6 rounded-2xl space-y-5">
+                  <h3 className="text-[10px] uppercase tracking-widest text-white/30">Your Expression Types</h3>
+                  {(['poem', 'quote', 'thought'] as const).map(type => {
+                    const count = posts.filter(p => p.userId === user?.id && p.type === type).length;
+                    const total = posts.filter(p => p.userId === user?.id).length;
+                    const pct = total > 0 ? (count / total) * 100 : 0;
+                    return (
+                      <div key={type} className="space-y-2">
+                        <div className="flex items-center justify-between text-[9px] uppercase tracking-widest">
+                          <span className="text-white/40">{type}</span>
+                          <span className="text-white/20">{count}</span>
+                        </div>
+                        <div className="h-1 bg-white/5 rounded-full overflow-hidden">
+                          <motion.div
+                            initial={{ width: 0 }}
+                            animate={{ width: `${pct}%` }}
+                            transition={{ duration: 1, delay: 0.2 }}
+                            className="h-full bg-white/20 rounded-full"
+                          />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Sanctuary-wide Category Breakdown — NEW */}
+                <div className="bg-white/[0.03] border border-white/10 p-6 rounded-2xl space-y-5">
+                  <h3 className="text-[10px] uppercase tracking-widest text-white/30">Sanctuary Pulse by Theme</h3>
+                  {trendingCategories.map(([cat, count]) => {
+                    const pct = posts.length > 0 ? (count / posts.length) * 100 : 0;
+                    return (
+                      <div key={cat} className="space-y-2">
+                        <div className="flex items-center justify-between text-[9px] uppercase tracking-widest">
+                          <button
+                            onClick={() => { setSelectedCategory(cat); setActiveTab('home'); }}
+                            className="text-white/40 hover:text-white transition-colors"
+                          >
+                            {cat}
+                          </button>
+                          <span className="text-white/20 tabular-nums">{count} posts · {pct.toFixed(0)}%</span>
+                        </div>
+                        <div className="h-1 bg-white/5 rounded-full overflow-hidden">
+                          <motion.div
+                            initial={{ width: 0 }}
+                            animate={{ width: `${pct}%` }}
+                            transition={{ duration: 1, delay: 0.1 }}
+                            className="h-full bg-white/15 rounded-full"
+                          />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Recent Echoes */}
                 <div className="space-y-6">
                   <h3 className="text-xs uppercase tracking-[0.4em] text-white/30 border-b border-white/5 pb-4">Recent Echoes on Your Posts</h3>
                   <div className="space-y-4">
@@ -1556,7 +1803,7 @@ export default function App() {
                             </div>
                             <div className="space-y-2">
                               <div className="text-[9px] uppercase tracking-widest text-white/40">
-                                <span className="text-white/60">{ref.username}</span> echoed on your post in <span className="italic">{posts.find(p => p.id === ref.postId)?.category || 'Unknown'}</span>
+                                <span className="text-white/60">{ref.username}</span> echoed on your post in <span className="italic">{posts.find(p => p.id === ref.postId)?.category}</span>
                               </div>
                               <p className="text-sm font-serif italic text-white/70">"{ref.content}"</p>
                               <div className="text-[8px] text-white/20">{new Date(ref.createdAt).toLocaleString()}</div>
@@ -1586,6 +1833,7 @@ export default function App() {
 
                 <div className="space-y-6">
                   <div className="bg-white/[0.03] border border-white/10 p-8 rounded-3xl space-y-8">
+                    {/* Account */}
                     <div className="space-y-6">
                       <h4 className="text-[10px] uppercase tracking-widest text-white/30">Account</h4>
                       <div className="flex items-center justify-between">
@@ -1594,15 +1842,7 @@ export default function App() {
                             {user?.avatarUrl ? <img src={user.avatarUrl} alt="" className="w-full h-full object-cover" /> : <UserIcon size={20} className="m-3 text-white/10" />}
                           </div>
                           <div>
-                            <div className="flex items-center gap-3">
-                              <div className="text-sm text-white/80">{user?.username}</div>
-                              <button 
-                                onClick={() => setViewedProfileId(user?.id || null)}
-                                className="text-[9px] uppercase tracking-widest text-white/30 hover:text-white transition-colors"
-                              >
-                                Edit
-                              </button>
-                            </div>
+                            <div className="text-sm text-white/80">{user?.username}</div>
                             <div className="text-[10px] text-white/30">Joined {new Date(user?.joinDate || 0).toLocaleDateString()}</div>
                           </div>
                         </div>
@@ -1617,16 +1857,55 @@ export default function App() {
 
                     <div className="h-px w-full bg-white/5" />
 
+                    {/* Sanctuary Experience */}
                     <div className="space-y-6">
                       <h4 className="text-[10px] uppercase tracking-widest text-white/30">Sanctuary Experience</h4>
+                      
+                      {/* Zen Mode — NOW FUNCTIONAL */}
                       <div className="flex items-center justify-between">
                         <div className="space-y-1">
-                          <div className="text-sm text-white/70">Zen Mode</div>
-                          <div className="text-[10px] text-white/30">Hide all distractions for deep focus</div>
+                          <div className="text-sm text-white/70 flex items-center gap-2">
+                            <Zap size={14} className="text-white/30" />
+                            Zen Mode
+                          </div>
+                          <div className="text-[10px] text-white/30">Hide category filters for distraction-free reading</div>
                         </div>
-                        <button className="w-10 h-5 rounded-full bg-white/5 border border-white/10 relative">
-                          <div className="absolute left-1 top-1 w-3 h-3 rounded-full bg-white/20" />
+                        <button
+                          onClick={() => setIsZenMode(!isZenMode)}
+                          className={`w-10 h-5 rounded-full border relative transition-all duration-300 ${isZenMode ? 'bg-white/20 border-white/30' : 'bg-white/5 border-white/10'}`}
+                        >
+                          <div className={`absolute top-1 w-3 h-3 rounded-full transition-all duration-300 ${isZenMode ? 'left-6 bg-white' : 'left-1 bg-white/30'}`} />
                         </button>
+                      </div>
+
+                      <div className="h-px w-full bg-white/5" />
+
+                      {/* Edit Profile shortcut */}
+                      <div className="flex items-center justify-between">
+                        <div className="space-y-1">
+                          <div className="text-sm text-white/70">Edit Profile</div>
+                          <div className="text-[10px] text-white/30">Update your bio and avatar</div>
+                        </div>
+                        <button
+                          onClick={() => { setViewedProfileId(user?.id || null); }}
+                          className="px-4 py-2 rounded-full bg-white/5 border border-white/10 text-white/50 text-[10px] uppercase tracking-widest hover:bg-white/10 transition-all"
+                        >
+                          Edit
+                        </button>
+                      </div>
+
+                      <div className="h-px w-full bg-white/5" />
+
+                      {/* Bookmarks info */}
+                      <div className="flex items-center justify-between">
+                        <div className="space-y-1">
+                          <div className="text-sm text-white/70 flex items-center gap-2">
+                            <Bookmark size={14} className="text-white/30" />
+                            Saved Expressions
+                          </div>
+                          <div className="text-[10px] text-white/30">Bookmarks are stored locally on this device</div>
+                        </div>
+                        <span className="text-sm font-serif text-white/40">{bookmarks.length}</span>
                       </div>
                     </div>
                   </div>
@@ -1636,56 +1915,179 @@ export default function App() {
           </AnimatePresence>
         </div>
 
-        {/* Side Panels (Hidden on small screens) */}
-        <aside className="fixed left-8 bottom-32 z-20 hidden xl:block w-[280px]">
-          {/* ... Left Sidebar Content ... */}
+        {/* Left Sidebar — now with actual content */}
+        <aside className="fixed left-8 bottom-32 z-20 hidden xl:block w-[280px] space-y-6">
+          {user && (
+            <div className="bg-white/[0.03] border border-white/10 rounded-2xl p-5 space-y-4 backdrop-blur-md">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-white/5 border border-white/10 overflow-hidden flex-shrink-0">
+                  {user.avatarUrl ? (
+                    <img src={user.avatarUrl} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                  ) : (
+                    <UserIcon size={16} className="m-2 text-white/20" />
+                  )}
+                </div>
+                <div className="overflow-hidden">
+                  <div className="text-sm font-serif text-white/70 truncate">{user.username}</div>
+                  <div className="text-[9px] uppercase tracking-widest text-white/20">
+                    {posts.filter(p => p.userId === user.id).length} expressions
+                  </div>
+                </div>
+              </div>
+              <div className="grid grid-cols-3 gap-2 pt-3 border-t border-white/5">
+                <div className="text-center">
+                  <div className="text-lg font-serif text-white/60">{posts.filter(p => p.userId === user.id).length}</div>
+                  <div className="text-[7px] uppercase tracking-widest text-white/20">Posts</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-lg font-serif text-white/60">{user.following?.length || 0}</div>
+                  <div className="text-[7px] uppercase tracking-widest text-white/20">Following</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-lg font-serif text-white/60">{bookmarks.length}</div>
+                  <div className="text-[7px] uppercase tracking-widest text-white/20">Saved</div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          <SanctuaryInsights
+            poem={poemOfTheDay}
+            thought={thoughtOfTheDay}
+            mostFelt={mostFelt}
+            onSelect={(post) => { setSelectedPost(post); setActiveTab('home'); }}
+            categories={CATEGORIES}
+            posts={posts}
+          />
         </aside>
 
-        <aside className="fixed right-8 top-32 z-20 hidden 2xl:block w-[300px] space-y-8">
-          {/* ... Right Sidebar Content ... */}
+        {/* Right Sidebar — now with actual content */}
+        <aside className="fixed right-8 top-32 z-20 hidden 2xl:block w-[300px] space-y-6">
+          {/* Trending Themes */}
+          <div className="bg-white/[0.03] border border-white/10 rounded-2xl p-5 space-y-4 backdrop-blur-md">
+            <div className="flex items-center gap-2 text-[9px] uppercase tracking-widest text-white/30">
+              <TrendingUp size={12} />
+              <span>Resonating Themes</span>
+            </div>
+            <div className="space-y-3">
+              {trendingCategories.length > 0 ? trendingCategories.map(([cat, count], i) => (
+                <button
+                  key={cat}
+                  onClick={() => setSelectedCategory(selectedCategory === cat ? null : cat)}
+                  className={`w-full flex items-center gap-3 group transition-all ${selectedCategory === cat ? 'text-white' : 'text-white/40 hover:text-white/60'}`}
+                >
+                  <span className="text-[8px] text-white/15 w-3">{i + 1}</span>
+                  <span className="text-[9px] uppercase tracking-widest flex-1 text-left">{cat}</span>
+                  <div className="flex items-center gap-2">
+                    <div
+                      className={`h-px rounded transition-all ${selectedCategory === cat ? 'bg-white/40' : 'bg-white/10 group-hover:bg-white/20'}`}
+                      style={{ width: `${Math.max(12, Math.min(60, (count / (posts.length || 1)) * 300))}px` }}
+                    />
+                    <span className="text-[8px] text-white/20 tabular-nums w-5 text-right">{count}</span>
+                  </div>
+                </button>
+              )) : (
+                <p className="text-[10px] text-white/20 italic">No posts yet.</p>
+              )}
+            </div>
+          </div>
+
+          {/* Discover Souls */}
+          <div className="bg-white/[0.03] border border-white/10 rounded-2xl p-5 space-y-4 backdrop-blur-md">
+            <div className="flex items-center gap-2 text-[9px] uppercase tracking-widest text-white/30">
+              <Users size={12} />
+              <span>Souls in the Sanctuary</span>
+              <span className="ml-auto text-white/15">{allUsers.length}</span>
+            </div>
+            <div className="space-y-3">
+              {allUsers.slice(0, 7).map(u => (
+                <button
+                  key={u.id}
+                  onClick={() => setViewedProfileId(u.id)}
+                  className="w-full flex items-center gap-3 group transition-all text-white/40 hover:text-white/70"
+                >
+                  <div className="w-7 h-7 rounded-full bg-white/5 border border-white/10 overflow-hidden flex-shrink-0">
+                    {u.avatarUrl ? (
+                      <img src={u.avatarUrl} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                    ) : (
+                      <UserIcon size={10} className="m-1 text-white/20" />
+                    )}
+                  </div>
+                  <div className="flex-1 text-left overflow-hidden">
+                    <div className="text-[10px] truncate group-hover:text-white transition-colors">{u.username}</div>
+                    {u.bio ? (
+                      <div className="text-[8px] text-white/20 truncate italic">{u.bio}</div>
+                    ) : (
+                      <div className="text-[8px] text-white/15">{posts.filter(p => p.userId === u.id).length} posts</div>
+                    )}
+                  </div>
+                  <ChevronRight size={10} className="opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0" />
+                </button>
+              ))}
+            </div>
+          </div>
         </aside>
       </main>
 
       {/* Bottom Navigation */}
-      <nav className="fixed bottom-0 left-0 right-0 z-50 bg-black/60 backdrop-blur-2xl border-t border-white/5 px-6 py-4">
-        <div className="max-w-xl mx-auto flex items-center justify-between">
-          <button 
-            onClick={() => setActiveTab('home')}
-            className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'home' ? 'text-white' : 'text-white/30 hover:text-white/50'}`}
-          >
-            <Home size={20} />
-            <span className="text-[8px] uppercase tracking-widest">Home</span>
-          </button>
-          <button 
-            onClick={() => setActiveTab('daily')}
-            className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'daily' ? 'text-white' : 'text-white/30 hover:text-white/50'}`}
-          >
-            <BookOpen size={20} />
-            <span className="text-[8px] uppercase tracking-widest">Daily</span>
-          </button>
-          <button 
-            onClick={() => setActiveTab('profile')}
-            className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'profile' ? 'text-white' : 'text-white/30 hover:text-white/50'}`}
-          >
-            <UserIcon size={20} />
-            <span className="text-[8px] uppercase tracking-widest">Your Tab</span>
-          </button>
-          <button 
-            onClick={() => setActiveTab('analytics')}
-            className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'analytics' ? 'text-white' : 'text-white/30 hover:text-white/50'}`}
-          >
-            <BarChart3 size={20} />
-            <span className="text-[8px] uppercase tracking-widest">Analytics</span>
-          </button>
-          <button 
-            onClick={() => setActiveTab('settings')}
-            className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'settings' ? 'text-white' : 'text-white/30 hover:text-white/50'}`}
-          >
-            <Settings size={20} />
-            <span className="text-[8px] uppercase tracking-widest">Settings</span>
-          </button>
-        </div>
-      </nav>
+      {!isZenMode && (
+        <nav className="fixed bottom-0 left-0 right-0 z-50 bg-black/60 backdrop-blur-2xl border-t border-white/5 px-6 py-4">
+          <div className="max-w-xl mx-auto flex items-center justify-between">
+            <button 
+              onClick={() => setActiveTab('home')}
+              className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'home' ? 'text-white' : 'text-white/30 hover:text-white/50'}`}
+            >
+              <Home size={20} />
+              <span className="text-[8px] uppercase tracking-widest">Home</span>
+            </button>
+            <button 
+              onClick={() => setActiveTab('daily')}
+              className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'daily' ? 'text-white' : 'text-white/30 hover:text-white/50'}`}
+            >
+              <BookOpen size={20} />
+              <span className="text-[8px] uppercase tracking-widest">Daily</span>
+            </button>
+            <button 
+              onClick={() => setActiveTab('profile')}
+              className={`flex flex-col items-center gap-1 transition-all relative ${activeTab === 'profile' ? 'text-white' : 'text-white/30 hover:text-white/50'}`}
+            >
+              <UserIcon size={20} />
+              {bookmarks.length > 0 && (
+                <div className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-white/40" />
+              )}
+              <span className="text-[8px] uppercase tracking-widest">Your Tab</span>
+            </button>
+            <button 
+              onClick={() => setActiveTab('analytics')}
+              className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'analytics' ? 'text-white' : 'text-white/30 hover:text-white/50'}`}
+            >
+              <BarChart3 size={20} />
+              <span className="text-[8px] uppercase tracking-widest">Analytics</span>
+            </button>
+            <button 
+              onClick={() => setActiveTab('settings')}
+              className={`flex flex-col items-center gap-1 transition-all relative ${activeTab === 'settings' ? 'text-white' : 'text-white/30 hover:text-white/50'}`}
+            >
+              <Settings size={20} />
+              {isZenMode && <div className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-white/40" />}
+              <span className="text-[8px] uppercase tracking-widest">Settings</span>
+            </button>
+          </div>
+        </nav>
+      )}
+
+      {/* Zen Mode Exit Button */}
+      {isZenMode && (
+        <motion.button
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          onClick={() => setIsZenMode(false)}
+          className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 bg-white/5 hover:bg-white/10 border border-white/10 px-5 py-2.5 rounded-full transition-all text-[9px] uppercase tracking-widest text-white/40 hover:text-white/70"
+        >
+          <EyeOff size={12} />
+          Exit Zen Mode
+        </motion.button>
+      )}
     </div>
     </ErrorBoundary>
   );
