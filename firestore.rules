@@ -161,6 +161,14 @@ service cloud.firestore {
       }
     }
 
+    match /{path=**}/reflections/{reflectionId} {
+      allow read: if isAuthenticated();
+    }
+
+    match /{path=**}/reactions/{reactionId} {
+      allow read: if isAuthenticated();
+    }
+
     match /messages/{messageId} {
       allow read: if true;
       allow create: if isAuthenticated() && isValidMessage(request.resource.data);

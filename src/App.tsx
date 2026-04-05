@@ -37,6 +37,7 @@ import {
 } from 'firebase/auth';
 import { 
   collection, 
+  collectionGroup,
   onSnapshot, 
   query, 
   orderBy, 
@@ -866,26 +867,23 @@ export default function App() {
   };
 
   useEffect(() => {
-    if (!selectedPost || !isAuthReady) return;
+    if (!isAuthReady) return;
 
-    const reflectionsQuery = query(
-      collection(db, 'posts', selectedPost.id, 'reflections'), 
-      orderBy('createdAt', 'asc')
-    );
+    const reflectionsQuery = collectionGroup(db, 'reflections');
     const unsubscribeReflections = onSnapshot(reflectionsQuery, (snapshot) => {
       setReflections(snapshot.docs.map(doc => doc.data() as Reflection));
-    }, (error) => handleFirestoreError(error, OperationType.LIST, `posts/${selectedPost.id}/reflections`));
+    }, (error) => handleFirestoreError(error, OperationType.LIST, 'reflections'));
 
-    const reactionsQuery = collection(db, 'posts', selectedPost.id, 'reactions');
+    const reactionsQuery = collectionGroup(db, 'reactions');
     const unsubscribeReactions = onSnapshot(reactionsQuery, (snapshot) => {
       setReactions(snapshot.docs.map(doc => doc.data() as Reaction));
-    }, (error) => handleFirestoreError(error, OperationType.LIST, `posts/${selectedPost.id}/reactions`));
+    }, (error) => handleFirestoreError(error, OperationType.LIST, 'reactions'));
 
     return () => {
       unsubscribeReflections();
       unsubscribeReactions();
     };
-  }, [selectedPost, isAuthReady]);
+  }, [isAuthReady]);
 
   const handleSendMessage = async () => {
     if (!user || !activeChatUserId || !messageText.trim()) return;
@@ -1558,7 +1556,7 @@ export default function App() {
                             </div>
                             <div className="space-y-2">
                               <div className="text-[9px] uppercase tracking-widest text-white/40">
-                                <span className="text-white/60">{ref.username}</span> echoed on your post in <span className="italic">{posts.find(p => p.id === ref.postId)?.category}</span>
+                                <span className="text-white/60">{ref.username}</span> echoed on your post in <span className="italic">{posts.find(p => p.id === ref.postId)?.category || 'Unknown'}</span>
                               </div>
                               <p className="text-sm font-serif italic text-white/70">"{ref.content}"</p>
                               <div className="text-[8px] text-white/20">{new Date(ref.createdAt).toLocaleString()}</div>
