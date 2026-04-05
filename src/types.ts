@@ -79,6 +79,17 @@ export interface Message {
   isRead: boolean;
 }
 
+export interface SereinNotification {
+  id: string;
+  userId: string;
+  type: 'follow' | 'reaction' | 'message' | 'reflection';
+  fromUserId: string;
+  fromUsername: string;
+  postId?: string;
+  createdAt: number;
+  isRead: boolean;
+}
+
 export const THEMES: Record<Category, { bg: string; text: string; accent: string; glow: string }> = {
   Melancholy: {
     bg: "bg-[#1a1c2c]",

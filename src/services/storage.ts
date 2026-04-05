@@ -12,10 +12,11 @@ import {
   orderBy, 
   onSnapshot,
   addDoc,
-  Timestamp
+  Timestamp,
+  or
 } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
-import { Post, Reflection, Reaction, User, Draft, Message } from '../types';
+import { Post, Reflection, Reaction, User, Draft, Message, SereinNotification } from '../types';
 
 const STORAGE_KEYS = {
   CURRENT_USER: 'serein_current_user',
@@ -221,6 +222,54 @@ export const storage = {
       await setDoc(doc(db, 'messages', message.id), message);
     } catch (e) {
       handleFirestoreError(e, OperationType.WRITE, `messages/${message.id}`);
+    }
+  },
+
+  markMessageAsRead: async (messageId: string) => {
+    try {
+      await updateDoc(doc(db, 'messages', messageId), { isRead: true });
+    } catch (e) {
+      handleFirestoreError(e, OperationType.UPDATE, `messages/${messageId}`);
+    }
+  },
+
+  clearConversation: async (userId: string, partnerId: string) => {
+    try {
+      const q = query(
+        collection(db, 'messages'),
+        or(
+          where('senderId', '==', userId),
+          where('receiverId', '==', userId)
+        )
+      );
+      const snapshot = await getDocs(q);
+      const batch = snapshot.docs
+        .filter(d => {
+          const m = d.data();
+          return (m.senderId === partnerId && m.receiverId === userId) || 
+                 (m.senderId === userId && m.receiverId === partnerId);
+        })
+        .map(d => deleteDoc(doc(db, 'messages', d.id)));
+      await Promise.all(batch);
+    } catch (e) {
+      handleFirestoreError(e, OperationType.DELETE, `messages/clear/${partnerId}`);
+    }
+  },
+
+  // --- Notification Operations ---
+  saveNotification: async (notification: SereinNotification) => {
+    try {
+      await setDoc(doc(db, 'notifications', notification.id), notification);
+    } catch (e) {
+      handleFirestoreError(e, OperationType.WRITE, `notifications/${notification.id}`);
+    }
+  },
+
+  markNotificationAsRead: async (notificationId: string) => {
+    try {
+      await updateDoc(doc(db, 'notifications', notificationId), { isRead: true });
+    } catch (e) {
+      handleFirestoreError(e, OperationType.UPDATE, `notifications/${notificationId}`);
     }
   },
 

@@ -34,10 +34,11 @@ import {
   Mail,
   Lock,
   Eye,
-  EyeOff
+  EyeOff,
+  Bell
 } from 'lucide-react';
 import { storage } from './services/storage';
-import { Post, Reflection, Reaction, User, Category, CATEGORIES, THEMES, Draft, Message } from './types';
+import { Post, Reflection, Reaction, User, Category, CATEGORIES, THEMES, Draft, Message, SereinNotification } from './types';
 import { auth, db, googleProvider, handleFirestoreError, OperationType } from './firebase';
 import { 
   onAuthStateChanged, 
@@ -920,8 +921,9 @@ export default function App() {
   const [isWriting, setIsWriting] = useState(false);
   const [viewedProfileId, setViewedProfileId] = useState<string | null>(null);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'home' | 'daily' | 'profile' | 'analytics' | 'settings'>('home');
+  const [activeTab, setActiveTab] = useState<'home' | 'daily' | 'profile' | 'analytics' | 'settings' | 'notifications' | 'messages'>('home');
   const [messages, setMessages] = useState<Message[]>([]);
+  const [notifications, setNotifications] = useState<SereinNotification[]>([]);
   const [activeChatUserId, setActiveChatUserId] = useState<string | null>(null);
   const [messageText, setMessageText] = useState('');
   const [isAuthReady, setIsAuthReady] = useState(false);
@@ -988,6 +990,18 @@ export default function App() {
       await storage.unfollowUser(user.id, targetUserId);
     } else {
       await storage.followUser(user.id, targetUserId);
+      
+      // Add notification for target user
+      const notification: SereinNotification = {
+        id: Math.random().toString(36).substr(2, 9),
+        userId: targetUserId,
+        type: 'follow',
+        fromUserId: user.id,
+        fromUsername: user.username,
+        createdAt: Date.now(),
+        isRead: false
+      };
+      await storage.saveNotification(notification);
     }
     const updatedUser = await storage.getUserById(user.id);
     if (updatedUser) {
@@ -1065,10 +1079,23 @@ export default function App() {
       (error) => handleFirestoreError(error, OperationType.LIST, 'messages')
     ) : () => {};
 
+    const unsubscribeNotifications = user ? onSnapshot(
+      query(
+        collection(db, 'notifications'),
+        where('userId', '==', user.id),
+        orderBy('createdAt', 'desc')
+      ),
+      (snapshot) => {
+        setNotifications(snapshot.docs.map(doc => doc.data() as SereinNotification));
+      },
+      (error) => handleFirestoreError(error, OperationType.LIST, 'notifications')
+    ) : () => {};
+
     return () => {
       unsubscribeUsers();
       unsubscribePosts();
       unsubscribeMessages();
+      unsubscribeNotifications();
     };
   }, [isAuthReady, user]);
 
@@ -1108,6 +1135,14 @@ export default function App() {
     };
   }, [isAuthReady]);
 
+  useEffect(() => {
+    if (!user || !activeChatUserId) return;
+    const unread = messages.filter(m => m.senderId === activeChatUserId && m.receiverId === user.id && !m.isRead);
+    if (unread.length > 0) {
+      unread.forEach(m => storage.markMessageAsRead(m.id));
+    }
+  }, [activeChatUserId, messages, user]);
+
   const handleSendMessage = async () => {
     if (!user || !activeChatUserId || !messageText.trim()) return;
     const newMessage: Message = {
@@ -1119,7 +1154,31 @@ export default function App() {
       isRead: false
     };
     await storage.saveMessage(newMessage);
+
+    // Add notification for receiver
+    const notification: SereinNotification = {
+      id: Math.random().toString(36).substr(2, 9),
+      userId: activeChatUserId,
+      type: 'message',
+      fromUserId: user.id,
+      fromUsername: user.username,
+      createdAt: Date.now(),
+      isRead: false
+    };
+    await storage.saveNotification(notification);
+    
     setMessageText('');
+  };
+
+  const handleClearChat = async () => {
+    if (!user || !activeChatUserId || !confirm('Are you sure you want to clear these whispers? They will be lost to the void.')) return;
+    await storage.clearConversation(user.id, activeChatUserId);
+  };
+
+  const handleMarkAllNotificationsAsRead = async () => {
+    if (!user) return;
+    const unread = notifications.filter(n => !n.isRead);
+    await Promise.all(unread.map(n => storage.markNotificationAsRead(n.id)));
   };
 
   const handleLogout = async () => {
@@ -1131,32 +1190,36 @@ export default function App() {
   const handlePost = async (content: string, category?: Category, isAnonymous?: boolean, postType?: 'poem' | 'quote' | 'thought') => {
     if (!user) return;
 
-    if (isEditingPost && selectedPost) {
-      const updatedPost: Post = { 
-        ...selectedPost, 
-        content, 
-        category: category || selectedPost.category, 
-        isAnonymous: isAnonymous ?? selectedPost.isAnonymous, 
-        type: postType || selectedPost.type 
-      };
-      await storage.updatePost(updatedPost);
-      setIsEditingPost(false);
-    } else {
-      const newPost: Post = {
-        id: Math.random().toString(36).substr(2, 9),
-        userId: user.id,
-        username: user.username,
-        avatarUrl: user.avatarUrl,
-        isAnonymous: !!isAnonymous,
-        content,
-        category: category || 'Philosophical',
-        createdAt: Date.now(),
-        type: postType || 'thought'
-      };
-      await storage.savePost(newPost);
-      setSelectedPost(newPost);
+    try {
+      if (isEditingPost && selectedPost) {
+        const updatedPost: Post = { 
+          ...selectedPost, 
+          content, 
+          category: category || selectedPost.category, 
+          isAnonymous: isAnonymous ?? selectedPost.isAnonymous, 
+          type: postType || selectedPost.type 
+        };
+        await storage.updatePost(updatedPost);
+        setIsEditingPost(false);
+      } else {
+        const newPost: Post = {
+          id: Math.random().toString(36).substr(2, 9),
+          userId: user.id,
+          username: user.username,
+          avatarUrl: user.avatarUrl,
+          isAnonymous: !!isAnonymous,
+          content,
+          category: category || 'Philosophical',
+          createdAt: Date.now(),
+          type: postType || 'thought'
+        };
+        await storage.savePost(newPost);
+        setSelectedPost(newPost);
+      }
+      setIsWriting(false);
+    } catch (err) {
+      console.error("Failed to post:", err);
     }
-    setIsWriting(false);
   };
 
   const handleDeletePost = async () => {
@@ -1167,19 +1230,38 @@ export default function App() {
 
   const handleReflection = async (content: string) => {
     if (!user || !selectedPost) return;
-    const newReflection: Reflection = {
-      id: Math.random().toString(36).substr(2, 9),
-      postId: selectedPost.id,
-      userId: user.id,
-      username: user.username,
-      avatarUrl: user.avatarUrl,
-      content,
-      createdAt: Date.now(),
-      parentId: replyToId || undefined
-    };
-    await storage.saveReflection(newReflection);
-    setReplyToId(null);
-    setIsWriting(false);
+    try {
+      const newReflection: Reflection = {
+        id: Math.random().toString(36).substr(2, 9),
+        postId: selectedPost.id,
+        userId: user.id,
+        username: user.username,
+        avatarUrl: user.avatarUrl,
+        content,
+        createdAt: Date.now(),
+        parentId: replyToId || undefined
+      };
+      await storage.saveReflection(newReflection);
+      
+      // Add notification for post owner
+      if (selectedPost.userId !== user.id) {
+        const notification: SereinNotification = {
+          id: Math.random().toString(36).substr(2, 9),
+          userId: selectedPost.userId,
+          type: 'reflection',
+          fromUserId: user.id,
+          fromUsername: user.username,
+          postId: selectedPost.id,
+          createdAt: Date.now(),
+          isRead: false
+        };
+        await storage.saveNotification(notification);
+      }
+      setReplyToId(null);
+      setIsWriting(false);
+    } catch (err) {
+      console.error("Failed to reflect:", err);
+    }
   };
 
   const handleReaction = async (type: Reaction['type'], e: React.MouseEvent) => {
@@ -1197,6 +1279,21 @@ export default function App() {
       type
     };
     await storage.saveReaction(reaction);
+
+    // Add notification for post owner
+    if (selectedPost.userId !== user.id) {
+      const notification: SereinNotification = {
+        id: Math.random().toString(36).substr(2, 9),
+        userId: selectedPost.userId,
+        type: 'reaction',
+        fromUserId: user.id,
+        fromUsername: user.username,
+        postId: selectedPost.id,
+        createdAt: Date.now(),
+        isRead: false
+      };
+      await storage.saveNotification(notification);
+    }
   };
 
   const currentTheme = selectedPost ? THEMES[selectedPost.category] : THEMES.Philosophical;
@@ -1243,11 +1340,11 @@ export default function App() {
 
   return (
     <ErrorBoundary>
-      <div className={`min-h-screen transition-colors duration-[1500ms] bg-[#050505] ${currentTheme.text}`}>
-        <div className="sanctuary-bg" />
-        {!user && isAuthReady && <AuthModal onLogin={setUser} />}
-      
-      <AnimatePresence>
+    <div className={`h-screen overflow-hidden ${currentTheme.bg} text-white font-sans selection:bg-white/10`}>
+      <div className="sanctuary-bg" />
+      {!user && isAuthReady && <AuthModal onLogin={setUser} />}
+    
+    <AnimatePresence>
         {(isWriting || isEditingPost) && (
           <WritingMode 
             onClose={() => { setIsWriting(false); setIsEditingPost(false); setReplyToId(null); }} 
@@ -1270,191 +1367,223 @@ export default function App() {
       </AnimatePresence>
 
       {/* Navigation */}
-      <nav className="fixed top-0 left-0 right-0 z-50 flex flex-col pointer-events-none">
-        <div className="flex items-center justify-between px-6 py-4 bg-black/60 backdrop-blur-2xl border-b border-white/5 pointer-events-auto">
-          <div className="flex items-center gap-3">
-            <div className={`w-6 h-6 rounded-full ${currentTheme.bg} border ${currentTheme.accent} flex items-center justify-center ${currentTheme.glow}`}>
-              <Feather size={12} className="text-white/80" />
-            </div>
-            <h1 className="text-lg font-serif tracking-[0.2em] uppercase">Serein</h1>
-            {isZenMode && (
-              <span className="text-[8px] uppercase tracking-widest text-white/20 border border-white/10 px-2 py-0.5 rounded-full">
-                Zen
-              </span>
-            )}
-          </div>
-          
-          <div className="flex items-center gap-4">
-            <button 
-              onClick={() => setShowSearch(!showSearch)}
-              className={`p-2 rounded-full transition-all border ${showSearch ? 'bg-white/10 border-white/20 text-white' : 'bg-white/5 border-white/5 text-white/40 hover:text-white/60'}`}
-            >
-              <Search size={14} />
-            </button>
-
-            {user && (
-              <button 
-                onClick={() => setViewedProfileId(user.id)}
-                className="w-8 h-8 rounded-full bg-white/5 border border-white/10 overflow-hidden flex items-center justify-center hover:border-white/30 transition-all"
-              >
-                {user.avatarUrl ? <img src={user.avatarUrl} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" /> : <UserIcon size={14} className="text-white/20" />}
-              </button>
-            )}
-            {user && (
-              <button 
-                onClick={handleLogout}
-                className="hidden sm:block text-[10px] uppercase tracking-widest text-white/30 hover:text-white transition-colors"
-              >
-                Logout
-              </button>
-            )}
-            <button 
-              onClick={() => { setWritingType('post'); setIsWriting(true); }}
-              className="hidden lg:flex items-center gap-2 bg-white/5 hover:bg-white/10 px-3 py-1.5 rounded-full transition-all border border-white/10"
-            >
-              <Plus size={14} />
-              <span className="text-[10px] uppercase tracking-widest">Express</span>
-            </button>
-          </div>
-        </div>
-
-        {/* Search Bar */}
-        <AnimatePresence>
-          {showSearch && (
-            <motion.div
-              initial={{ height: 0, opacity: 0 }}
-              animate={{ height: 'auto', opacity: 1 }}
-              exit={{ height: 0, opacity: 0 }}
-              className="w-full bg-black/40 backdrop-blur-xl border-b border-white/5 pointer-events-auto overflow-hidden"
-            >
-              <div className="max-w-xl mx-auto px-4 py-3 flex items-center gap-3">
-                <Search size={14} className="text-white/30" />
-                <input
-                  ref={searchInputRef}
-                  type="text"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Search the sanctuary..."
-                  className="flex-1 bg-transparent text-sm focus:outline-none placeholder:text-white/20"
-                />
-                {searchQuery && (
-                  <button onClick={() => setSearchQuery('')} className="text-white/30 hover:text-white">
-                    <X size={14} />
-                  </button>
-                )}
+      {!isZenMode && (
+        <nav className="fixed top-0 left-0 right-0 z-50 flex flex-col pointer-events-none">
+          <div className="flex items-center justify-between px-6 py-4 bg-black/60 backdrop-blur-2xl border-b border-white/5 pointer-events-auto">
+            <div className="flex items-center gap-3">
+              <div className={`w-6 h-6 rounded-full ${currentTheme.bg} border ${currentTheme.accent} flex items-center justify-center ${currentTheme.glow}`}>
+                <Feather size={12} className="text-white/80" />
               </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
+              <h1 className="text-lg font-serif tracking-[0.2em] uppercase">Serein</h1>
+            </div>
+            
+            <div className="flex items-center gap-4">
+              <button 
+                onClick={() => setShowSearch(!showSearch)}
+                className={`p-2 rounded-full transition-all border ${showSearch ? 'bg-white/10 border-white/20 text-white' : 'bg-white/5 border-white/5 text-white/40 hover:text-white/60'}`}
+              >
+                <Search size={14} />
+              </button>
 
-        {/* Category Filter - Responsive Scroll */}
-        {!isZenMode && (
-          <div className="w-full bg-black/40 backdrop-blur-xl border-b border-white/5 pointer-events-auto overflow-x-auto scrollbar-hide">
-            <div className="max-w-xl mx-auto px-4 py-3">
-              <div className="flex items-center lg:justify-center gap-2 min-w-max">
+              {user && (
                 <button 
-                  onClick={() => setSelectedCategory(null)}
-                  className={`px-3 py-1 rounded-full text-[8px] uppercase tracking-widest transition-all border ${!selectedCategory ? `bg-white/10 border-white/20 text-white ${currentTheme.glow}` : 'bg-white/5 border-white/5 text-white/40 hover:text-white/60'}`}
+                  onClick={() => setViewedProfileId(user.id)}
+                  className="w-8 h-8 rounded-full bg-white/5 border border-white/10 overflow-hidden flex items-center justify-center hover:border-white/30 transition-all"
                 >
-                  All
+                  {user.avatarUrl ? <img src={user.avatarUrl} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" /> : <UserIcon size={14} className="text-white/20" />}
                 </button>
-                {CATEGORIES.slice(0, 6).map(cat => (
+              )}
+              {user && (
+                <button 
+                  onClick={handleLogout}
+                  className="hidden sm:block text-[10px] uppercase tracking-widest text-white/30 hover:text-white transition-colors"
+                >
+                  Logout
+                </button>
+              )}
+              <button 
+                onClick={() => { setWritingType('post'); setIsWriting(true); }}
+                className="hidden lg:flex items-center gap-2 bg-white/5 hover:bg-white/10 px-3 py-1.5 rounded-full transition-all border border-white/10"
+              >
+                <Plus size={14} />
+                <span className="text-[10px] uppercase tracking-widest">Express</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Search Bar */}
+          <AnimatePresence>
+            {showSearch && (
+              <motion.div
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: 'auto', opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                className="w-full bg-black/40 backdrop-blur-xl border-b border-white/5 pointer-events-auto overflow-hidden"
+              >
+                <div className="max-w-xl mx-auto px-4 py-3 flex items-center gap-3">
+                  <Search size={14} className="text-white/30" />
+                  <input
+                    ref={searchInputRef}
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Search the sanctuary..."
+                    className="flex-1 bg-transparent text-sm focus:outline-none placeholder:text-white/20"
+                  />
+                  {searchQuery && (
+                    <button onClick={() => setSearchQuery('')} className="text-white/30 hover:text-white">
+                      <X size={14} />
+                    </button>
+                  )}
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* Category Filter - Responsive Scroll */}
+          {!isZenMode && (
+            <div className="w-full bg-black/40 backdrop-blur-xl border-b border-white/5 pointer-events-auto overflow-x-auto scrollbar-hide">
+              <div className="max-w-xl mx-auto px-4 py-3">
+                <div className="flex items-center lg:justify-center gap-2 min-w-max">
                   <button 
-                    key={cat}
-                    onClick={() => setSelectedCategory(cat)}
-                    className={`px-3 py-1 rounded-full text-[8px] uppercase tracking-widest transition-all border whitespace-nowrap ${selectedCategory === cat ? `bg-white/10 border-white/20 text-white ${currentTheme.glow}` : 'bg-white/5 border-white/5 text-white/40 hover:text-white/60'}`}
+                    onClick={() => setSelectedCategory(null)}
+                    className={`px-3 py-1 rounded-full text-[8px] uppercase tracking-widest transition-all border ${!selectedCategory ? `bg-white/10 border-white/20 text-white ${currentTheme.glow}` : 'bg-white/5 border-white/5 text-white/40 hover:text-white/60'}`}
                   >
-                    {cat}
+                    All
                   </button>
-                ))}
+                  {CATEGORIES.slice(0, 6).map(cat => (
+                    <button 
+                      key={cat}
+                      onClick={() => setSelectedCategory(cat)}
+                      className={`px-3 py-1 rounded-full text-[8px] uppercase tracking-widest transition-all border whitespace-nowrap ${selectedCategory === cat ? `bg-white/10 border-white/20 text-white ${currentTheme.glow}` : 'bg-white/5 border-white/5 text-white/40 hover:text-white/60'}`}
+                    >
+                      {cat}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
-          </div>
-        )}
-      </nav>
-
-      {/* Main Sanctuary Content */}
-      <main className={`main-container relative ${isZenMode ? 'bg-black/20' : ''}`}>
-        
-        {/* Left Panel: Identity */}
-        {!isZenMode && (
-          <aside className="hidden lg:flex flex-col w-64 side-panel-left pt-32 px-6 space-y-6">
-            <div className="bg-white/[0.03] backdrop-blur-md border border-white/10 rounded-3xl p-6 space-y-6">
-            <div className="flex flex-col items-center text-center space-y-4">
-              <div className="w-20 h-20 rounded-full bg-white/5 border border-white/10 overflow-hidden relative group">
-                {user?.avatarUrl ? (
-                  <img src={user.avatarUrl} alt="" className="w-full h-full object-cover" />
-                ) : (
-                  <UserIcon size={32} className="m-6 text-white/10" />
-                )}
-                <button 
-                  onClick={() => setViewedProfileId(user?.id || null)}
-                  className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"
-                >
-                  <Settings size={16} className="text-white" />
-                </button>
-              </div>
-              <div>
-                <h2 className="text-lg font-serif text-white/90">{user?.username || 'Guest'}</h2>
-                <p className="text-[10px] uppercase tracking-widest text-white/30 mt-1">Sanctuary Member</p>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4 py-4 border-y border-white/5">
-              <div className="text-center">
-                <div className="text-sm font-serif text-white/80">{user?.followers?.length || 0}</div>
-                <div className="text-[8px] uppercase tracking-widest text-white/30">Followers</div>
-              </div>
-              <div className="text-center">
-                <div className="text-sm font-serif text-white/80">{user?.following?.length || 0}</div>
-                <div className="text-[8px] uppercase tracking-widest text-white/30">Following</div>
-              </div>
-            </div>
-
-            <button 
-              onClick={() => { setWritingType('post'); setIsWriting(true); }}
-              className="w-full py-4 bg-white text-black rounded-2xl text-[10px] uppercase tracking-[0.2em] font-bold hover:bg-white/90 transition-all shadow-[0_0_20px_rgba(255,255,255,0.1)] flex items-center justify-center gap-2"
-            >
-              <Plus size={14} />
-              Express
-            </button>
-          </div>
-
-          <div className="px-4 space-y-4">
-            <button 
-              onClick={() => setActiveTab('home')}
-              className={`w-full flex items-center gap-4 px-4 py-3 rounded-2xl transition-all ${activeTab === 'home' ? 'bg-white/10 text-white' : 'text-white/30 hover:text-white/50'}`}
-            >
-              <Home size={18} />
-              <span className="text-[10px] uppercase tracking-widest font-medium">Sanctuary</span>
-            </button>
-            <button 
-              onClick={() => setActiveTab('daily')}
-              className={`w-full flex items-center gap-4 px-4 py-3 rounded-2xl transition-all ${activeTab === 'daily' ? 'bg-white/10 text-white' : 'text-white/30 hover:text-white/50'}`}
-            >
-              <BookOpen size={18} />
-              <span className="text-[10px] uppercase tracking-widest font-medium">Daily Echo</span>
-            </button>
-            <button 
-              onClick={() => setActiveTab('analytics')}
-              className={`w-full flex items-center gap-4 px-4 py-3 rounded-2xl transition-all ${activeTab === 'analytics' ? 'text-white' : 'text-white/30 hover:text-white/50'}`}
-            >
-              <BarChart3 size={18} />
-              <span className="text-[10px] uppercase tracking-widest font-medium">Resonance</span>
-            </button>
-            <button 
-              onClick={() => setActiveTab('settings')}
-              className={`w-full flex items-center gap-4 px-4 py-3 rounded-2xl transition-all ${activeTab === 'settings' ? 'text-white' : 'text-white/30 hover:text-white/50'}`}
-            >
-              <Settings size={18} />
-              <span className="text-[10px] uppercase tracking-widest font-medium">Settings</span>
-            </button>
-          </div>
-        </aside>
+          )}
+        </nav>
       )}
 
-        {/* Main Feed */}
-        <section className={`scrollable-feed pt-32 pb-24 px-6 transition-all duration-700 ${isZenMode ? 'w-full max-w-4xl' : 'flex-1 max-w-2xl mx-auto lg:ml-64 xl:mr-80'}`}>
+      {isZenMode && (
+        <button 
+          onClick={() => setIsZenMode(false)}
+          className="fixed top-8 right-8 z-[60] p-4 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 text-white/20 hover:text-white transition-all group"
+        >
+          <X size={20} />
+          <span className="absolute right-full mr-4 top-1/2 -translate-y-1/2 text-[8px] uppercase tracking-[0.3em] opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">Exit Zen</span>
+        </button>
+      )}
+
+      {/* Main Sanctuary Content */}
+      <main className={`h-screen overflow-hidden relative ${isZenMode ? 'bg-[#030303]' : ''}`}>
+        <div className="max-w-7xl mx-auto h-full flex relative px-6">
+          
+          {/* Left Panel: Identity */}
+          {!isZenMode && (
+            <aside className="hidden lg:flex flex-col fixed left-[calc(50%-40rem)] top-0 w-64 h-screen pt-32 space-y-6 overflow-y-auto scrollbar-hide shrink-0 pb-24 px-6">
+              <div className="bg-white/[0.03] backdrop-blur-md border border-white/10 rounded-3xl p-6 space-y-6">
+                <div className="flex flex-col items-center text-center space-y-4">
+                  <div className="w-20 h-20 rounded-full bg-white/5 border border-white/10 overflow-hidden relative group">
+                    {user?.avatarUrl ? (
+                      <img src={user.avatarUrl} alt="" className="w-full h-full object-cover" />
+                    ) : (
+                      <UserIcon size={32} className="m-6 text-white/10" />
+                    )}
+                    <button 
+                      onClick={() => setViewedProfileId(user?.id || null)}
+                      className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"
+                    >
+                      <Settings size={16} className="text-white" />
+                    </button>
+                  </div>
+                  <div>
+                    <h2 className="text-lg font-serif text-white/90">{user?.username || 'Guest'}</h2>
+                    <p className="text-[10px] uppercase tracking-widest text-white/30 mt-1">Sanctuary Member</p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4 py-4 border-y border-white/5">
+                  <div className="text-center">
+                    <div className="text-sm font-serif text-white/80">{user?.followers?.length || 0}</div>
+                    <div className="text-[8px] uppercase tracking-widest text-white/30">Followers</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-sm font-serif text-white/80">{user?.following?.length || 0}</div>
+                    <div className="text-[8px] uppercase tracking-widest text-white/30">Following</div>
+                  </div>
+                </div>
+
+                <button 
+                  onClick={() => { setWritingType('post'); setIsWriting(true); }}
+                  className="w-full py-4 bg-white text-black rounded-2xl text-[10px] uppercase tracking-[0.2em] font-bold hover:bg-white/90 transition-all shadow-[0_0_20px_rgba(255,255,255,0.1)] flex items-center justify-center gap-2"
+                >
+                  <Plus size={14} />
+                  Express
+                </button>
+              </div>
+
+              <div className="px-4 space-y-4">
+                <button 
+                  onClick={() => setActiveTab('home')}
+                  className={`w-full flex items-center gap-4 px-4 py-3 rounded-2xl transition-all ${activeTab === 'home' ? 'bg-white/10 text-white' : 'text-white/30 hover:text-white/50'}`}
+                >
+                  <Home size={18} />
+                  <span className="text-[10px] uppercase tracking-widest font-medium">Sanctuary</span>
+                </button>
+                <button 
+                  onClick={() => setActiveTab('daily')}
+                  className={`w-full flex items-center gap-4 px-4 py-3 rounded-2xl transition-all ${activeTab === 'daily' ? 'bg-white/10 text-white' : 'text-white/30 hover:text-white/50'}`}
+                >
+                  <BookOpen size={18} />
+                  <span className="text-[10px] uppercase tracking-widest font-medium">Daily Echo</span>
+                </button>
+                <button 
+                  onClick={() => setActiveTab('messages')}
+                  className={`w-full flex items-center gap-4 px-4 py-3 rounded-2xl transition-all ${activeTab === 'messages' ? 'bg-white/10 text-white' : 'text-white/30 hover:text-white/50'}`}
+                >
+                  <div className="relative">
+                    <MessageCircle size={18} />
+                    {messages.filter(m => m.receiverId === user?.id && !m.isRead).length > 0 && (
+                      <span className="absolute -top-1 -right-1 w-2 h-2 bg-white rounded-full shadow-[0_0_8px_rgba(255,255,255,0.5)]" />
+                    )}
+                  </div>
+                  <span className="text-[10px] uppercase tracking-widest font-medium">Whispers</span>
+                </button>
+                <button 
+                  onClick={() => setActiveTab('notifications')}
+                  className={`w-full flex items-center gap-4 px-4 py-3 rounded-2xl transition-all ${activeTab === 'notifications' ? 'bg-white/10 text-white' : 'text-white/30 hover:text-white/50'}`}
+                >
+                  <div className="relative">
+                    <Bell size={18} />
+                    {notifications.filter(n => !n.isRead).length > 0 && (
+                      <span className="absolute -top-1 -right-1 w-2 h-2 bg-white rounded-full shadow-[0_0_8px_rgba(255,255,255,0.5)]" />
+                    )}
+                  </div>
+                  <span className="text-[10px] uppercase tracking-widest font-medium">Echoes</span>
+                </button>
+                <button 
+                  onClick={() => setActiveTab('analytics')}
+                  className={`w-full flex items-center gap-4 px-4 py-3 rounded-2xl transition-all ${activeTab === 'analytics' ? 'text-white' : 'text-white/30 hover:text-white/50'}`}
+                >
+                  <BarChart3 size={18} />
+                  <span className="text-[10px] uppercase tracking-widest font-medium">Resonance</span>
+                </button>
+                <button 
+                  onClick={() => setActiveTab('settings')}
+                  className={`w-full flex items-center gap-4 px-4 py-3 rounded-2xl transition-all ${activeTab === 'settings' ? 'text-white' : 'text-white/30 hover:text-white/50'}`}
+                >
+                  <Settings size={18} />
+                  <span className="text-[10px] uppercase tracking-widest font-medium">Settings</span>
+                </button>
+              </div>
+            </aside>
+          )}
+
+          {/* Main Feed */}
+          <section className={`flex-1 h-full overflow-y-auto pt-32 pb-24 px-6 scrollbar-hide transition-all duration-700 ${isZenMode ? 'max-w-4xl mx-auto' : ''}`}>
           {/* Ripple Overlay */}
           {ripple && (
             <div 
@@ -1669,6 +1798,233 @@ export default function App() {
               </motion.div>
             )}
 
+            {activeTab === 'messages' && (
+              <motion.div
+                key="messages"
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+                className="pt-12 space-y-12"
+              >
+                <div className="space-y-4">
+                  <h2 className="text-3xl font-serif italic text-white/80">Sanctuary Whispers</h2>
+                  <p className="text-xs uppercase tracking-[0.3em] text-white/20">Private echoes between souls</p>
+                </div>
+                <div className="flex flex-col md:flex-row gap-6 h-[600px]">
+                  {/* Chat List */}
+                  <div className={`w-full md:w-1/3 space-y-2 overflow-y-auto pr-2 scrollbar-hide border-r border-white/5 ${activeChatUserId ? 'hidden md:block' : 'block'}`}>
+                    {getChatPartners().length > 0 ? (
+                      getChatPartners().map(partnerId => {
+                        const partner = allUsers.find(u => u.id === partnerId);
+                        const lastMsg = messages
+                          .filter(m => (m.senderId === partnerId && m.receiverId === user?.id) || (m.senderId === user?.id && m.receiverId === partnerId))
+                          .sort((a, b) => b.createdAt - a.createdAt)[0];
+                        
+                        return (
+                          <button
+                            key={partnerId}
+                            onClick={() => setActiveChatUserId(partnerId)}
+                            className={`w-full p-4 rounded-2xl border transition-all text-left flex items-center gap-4 ${activeChatUserId === partnerId ? 'bg-white/10 border-white/20' : 'bg-white/5 border-white/5 hover:bg-white/10'}`}
+                          >
+                            <div className="w-10 h-10 rounded-full bg-white/5 border border-white/10 overflow-hidden flex items-center justify-center shrink-0">
+                              {partner?.avatarUrl ? <img src={partner.avatarUrl} alt="" className="w-full h-full object-cover" /> : <UserIcon size={16} className="text-white/40" />}
+                            </div>
+                            <div className="flex-1 overflow-hidden">
+                              <div className="flex justify-between items-center mb-1">
+                                <div className="text-xs font-medium text-white/80 truncate">{partner?.username || `Soul`}</div>
+                                {lastMsg && (
+                                  <div className="text-[8px] text-white/20">
+                                    {new Date(lastMsg.createdAt).toLocaleDateString([], { month: 'short', day: 'numeric' })}
+                                  </div>
+                                )}
+                              </div>
+                              <div className="text-[10px] text-white/40 truncate">
+                                {lastMsg?.content || "..."}
+                              </div>
+                            </div>
+                          </button>
+                        );
+                      })
+                    ) : (
+                      <div className="text-[10px] text-white/20 italic p-8 border border-dashed border-white/5 rounded-2xl text-center">
+                        No whispers yet.
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Chat Window */}
+                  <div className={`flex-1 bg-white/[0.02] border border-white/5 rounded-3xl flex flex-col overflow-hidden ${activeChatUserId ? 'block' : 'hidden md:flex'}`}>
+                    {activeChatUserId ? (
+                      <>
+                        <div className="p-4 bg-white/[0.03] border-b border-white/5 flex items-center justify-between">
+                          <div className="flex items-center gap-3">
+                            <button onClick={() => setActiveChatUserId(null)} className="md:hidden text-white/40 hover:text-white p-1">
+                              <ArrowLeft size={16} />
+                            </button>
+                            <div className="w-8 h-8 rounded-full bg-white/5 border border-white/10 overflow-hidden">
+                              {allUsers.find(u => u.id === activeChatUserId)?.avatarUrl ? (
+                                <img src={allUsers.find(u => u.id === activeChatUserId)?.avatarUrl} alt="" className="w-full h-full object-cover" />
+                              ) : (
+                                <UserIcon size={12} className="m-2 text-white/40" />
+                              )}
+                            </div>
+                            <span className="text-[10px] uppercase tracking-widest text-white/60">
+                              {allUsers.find(u => u.id === activeChatUserId)?.username || `Soul`}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <button 
+                              onClick={handleClearChat}
+                              className="text-[8px] uppercase tracking-widest text-white/20 hover:text-red-400/60 transition-colors px-3 py-1 rounded-full border border-white/5 hover:border-red-400/20"
+                            >
+                              Clear Whispers
+                            </button>
+                            <button onClick={() => setActiveChatUserId(null)} className="hidden md:block text-white/20 hover:text-white p-2">
+                              <X size={16} />
+                            </button>
+                          </div>
+                        </div>
+                        <div className="flex-1 overflow-y-auto p-6 space-y-6 scrollbar-hide">
+                          {messages
+                            .filter(m => (m.senderId === activeChatUserId && m.receiverId === user?.id) || (m.senderId === user?.id && m.receiverId === activeChatUserId))
+                            .sort((a, b) => a.createdAt - b.createdAt)
+                            .map(m => (
+                              <div key={m.id} className={`flex ${m.senderId === user?.id ? 'justify-end' : 'justify-start'}`}>
+                                <div className={`max-w-[85%] md:max-w-[75%] space-y-1`}>
+                                  <div className={`p-4 rounded-[1.5rem] text-sm leading-relaxed ${m.senderId === user?.id ? 'bg-white/10 text-white/90 rounded-tr-none' : 'bg-white/5 text-white/70 rounded-tl-none'}`}>
+                                    {m.content}
+                                  </div>
+                                  <div className={`text-[8px] opacity-20 px-2 ${m.senderId === user?.id ? 'text-right' : 'text-left'}`}>
+                                    {new Date(m.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                          <div ref={chatEndRef} />
+                        </div>
+                        <div className="p-4 bg-black/20 border-t border-white/5">
+                          <div className="flex gap-3 bg-white/5 border border-white/10 rounded-2xl p-2 focus-within:border-white/20 transition-all">
+                            <input 
+                              type="text" 
+                              value={messageText}
+                              onChange={(e) => setMessageText(e.target.value)}
+                              onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()}
+                              placeholder="Type a whisper..."
+                              className="flex-1 bg-transparent px-4 py-2 text-xs text-white focus:outline-none"
+                            />
+                            <button 
+                              onClick={handleSendMessage}
+                              disabled={!messageText.trim()}
+                              className="w-10 h-10 rounded-xl bg-white text-black flex items-center justify-center hover:bg-gray-200 transition-all disabled:opacity-30"
+                            >
+                              <Send size={16} />
+                            </button>
+                          </div>
+                        </div>
+                      </>
+                    ) : (
+                      <div className="flex-1 flex flex-col items-center justify-center text-white/10 space-y-6 p-12 text-center">
+                        <div className="w-20 h-20 rounded-full bg-white/5 border border-white/10 flex items-center justify-center">
+                          <MessageCircle size={40} className="text-white/10" />
+                        </div>
+                        <div className="space-y-2">
+                          <p className="text-xs uppercase tracking-[0.3em] text-white/40">Sanctuary Whispers</p>
+                          <p className="text-[10px] text-white/20 max-w-[200px]">Select a soul from your conversations to begin a private whisper.</p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </motion.div>
+            )}
+
+            {activeTab === 'notifications' && (
+              <motion.div
+                key="notifications"
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+                className="pt-12 space-y-12"
+              >
+                <div className="flex items-center justify-between">
+                  <div className="space-y-4">
+                    <h2 className="text-3xl font-serif italic text-white/80">Echoes of Resonance</h2>
+                    <p className="text-xs uppercase tracking-[0.3em] text-white/20">Traces of others in your sanctuary</p>
+                  </div>
+                  {notifications.filter(n => !n.isRead).length > 0 && (
+                    <button 
+                      onClick={handleMarkAllNotificationsAsRead}
+                      className="text-[8px] uppercase tracking-widest text-white/40 hover:text-white transition-colors border border-white/10 px-4 py-2 rounded-full"
+                    >
+                      Silence All Echoes
+                    </button>
+                  )}
+                </div>
+
+                <div className="max-w-2xl space-y-4">
+                  {notifications.length > 0 ? (
+                    notifications.map((n, idx) => {
+                      const fromUser = allUsers.find(u => u.id === n.fromUserId);
+                      return (
+                        <motion.div
+                          key={n.id}
+                          initial={{ opacity: 0, y: 10 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          transition={{ delay: idx * 0.05 }}
+                          onClick={() => {
+                            storage.markNotificationAsRead(n.id);
+                            if (n.type === 'message') {
+                              setActiveChatUserId(n.fromUserId);
+                              setActiveTab('messages');
+                            } else if (n.postId) {
+                              const p = posts.find(post => post.id === n.postId);
+                              if (p) {
+                                setSelectedPost(p);
+                                setActiveTab('home');
+                                setExpandedPostId(p.id);
+                              }
+                            } else if (n.type === 'follow') {
+                              setViewedProfileId(n.fromUserId);
+                            }
+                          }}
+                          className={`group p-6 rounded-3xl border transition-all cursor-pointer flex items-center gap-6 ${n.isRead ? 'bg-white/[0.02] border-white/5 opacity-60' : 'bg-white/[0.05] border-white/10 hover:bg-white/[0.08]'}`}
+                        >
+                          <div className="w-12 h-12 rounded-full bg-white/5 border border-white/10 overflow-hidden shrink-0">
+                            {fromUser?.avatarUrl ? (
+                              <img src={fromUser.avatarUrl} alt="" className="w-full h-full object-cover" />
+                            ) : (
+                              <UserIcon size={20} className="m-3 text-white/20" />
+                            )}
+                          </div>
+                          <div className="flex-1 space-y-1">
+                            <p className="text-sm text-white/80 font-serif">
+                              <span className="font-sans font-medium text-white/90 mr-1">{n.fromUsername}</span>
+                              {n.type === 'follow' && 'started following your journey'}
+                              {n.type === 'reaction' && 'felt the resonance of your words'}
+                              {n.type === 'reflection' && 'shared a reflection on your thought'}
+                              {n.type === 'message' && 'sent a private whisper to you'}
+                            </p>
+                            <div className="flex items-center gap-3 text-[10px] text-white/20 uppercase tracking-widest">
+                              <span>{new Date(n.createdAt).toLocaleDateString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+                              {!n.isRead && <span className="w-1 h-1 bg-white rounded-full" />}
+                            </div>
+                          </div>
+                          <ChevronRight size={16} className="text-white/10 group-hover:text-white/40 transition-colors" />
+                        </motion.div>
+                      );
+                    })
+                  ) : (
+                    <div className="text-center py-24 space-y-6">
+                      <div className="w-16 h-16 rounded-full bg-white/5 border border-white/5 flex items-center justify-center mx-auto">
+                        <Bell size={24} className="text-white/10" />
+                      </div>
+                      <p className="text-xs font-serif italic text-white/20">The echoes are silent for now...</p>
+                    </div>
+                  )}
+                </div>
+              </motion.div>
+            )}
+
             {activeTab === 'profile' && (
               <motion.div
                 key="profile"
@@ -1696,123 +2052,6 @@ export default function App() {
                       </button>
                     </div>
                     <p className="text-[10px] uppercase tracking-widest text-white/20">Member since {new Date(user?.joinDate || 0).toLocaleDateString()}</p>
-                  </div>
-                </div>
-
-                {/* Messaging Section */}
-                <div className="space-y-8">
-                  <h3 className="text-xs uppercase tracking-[0.4em] text-white/30 border-b border-white/5 pb-4">Sanctuary Whispers</h3>
-                  <div className="flex flex-col md:flex-row gap-6 h-[500px]">
-                    {/* Chat List */}
-                    <div className="w-full md:w-1/3 space-y-2 overflow-y-auto pr-2 scrollbar-hide border-r border-white/5">
-                      {getChatPartners().length > 0 ? (
-                        getChatPartners().map(partnerId => {
-                          const partner = allUsers.find(u => u.id === partnerId);
-                          const lastMsg = messages
-                            .filter(m => (m.senderId === partnerId && m.receiverId === user?.id) || (m.senderId === user?.id && m.receiverId === partnerId))
-                            .sort((a, b) => b.createdAt - a.createdAt)[0];
-                          
-                          return (
-                            <button
-                              key={partnerId}
-                              onClick={() => setActiveChatUserId(partnerId)}
-                              className={`w-full p-4 rounded-2xl border transition-all text-left flex items-center gap-4 ${activeChatUserId === partnerId ? 'bg-white/10 border-white/20' : 'bg-white/5 border-white/5 hover:bg-white/10'}`}
-                            >
-                              <div className="w-10 h-10 rounded-full bg-white/5 border border-white/10 overflow-hidden flex items-center justify-center shrink-0">
-                                {partner?.avatarUrl ? <img src={partner.avatarUrl} alt="" className="w-full h-full object-cover" /> : <UserIcon size={16} className="text-white/40" />}
-                              </div>
-                              <div className="flex-1 overflow-hidden">
-                                <div className="flex justify-between items-center mb-1">
-                                  <div className="text-xs font-medium text-white/80 truncate">{partner?.username || `Soul`}</div>
-                                  {lastMsg && (
-                                    <div className="text-[8px] text-white/20">
-                                      {new Date(lastMsg.createdAt).toLocaleDateString([], { month: 'short', day: 'numeric' })}
-                                    </div>
-                                  )}
-                                </div>
-                                <div className="text-[10px] text-white/40 truncate">
-                                  {lastMsg?.content || "..."}
-                                </div>
-                              </div>
-                            </button>
-                          );
-                        })
-                      ) : (
-                        <div className="text-[10px] text-white/20 italic p-8 border border-dashed border-white/5 rounded-2xl text-center">
-                          No whispers yet.
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Chat Window */}
-                    <div className="flex-1 bg-white/[0.02] border border-white/5 rounded-3xl flex flex-col overflow-hidden">
-                      {activeChatUserId ? (
-                        <>
-                          <div className="p-4 bg-white/[0.03] border-b border-white/5 flex items-center justify-between">
-                            <div className="flex items-center gap-3">
-                              <div className="w-8 h-8 rounded-full bg-white/5 border border-white/10 overflow-hidden">
-                                {allUsers.find(u => u.id === activeChatUserId)?.avatarUrl ? (
-                                  <img src={allUsers.find(u => u.id === activeChatUserId)?.avatarUrl} alt="" className="w-full h-full object-cover" />
-                                ) : (
-                                  <UserIcon size={12} className="m-2 text-white/40" />
-                                )}
-                              </div>
-                              <span className="text-[10px] uppercase tracking-widest text-white/60">
-                                {allUsers.find(u => u.id === activeChatUserId)?.username || `Soul`}
-                              </span>
-                            </div>
-                            <button onClick={() => setActiveChatUserId(null)} className="text-white/20 hover:text-white p-2">
-                              <X size={16} />
-                            </button>
-                          </div>
-                          <div className="flex-1 overflow-y-auto p-6 space-y-6 scrollbar-hide">
-                            {messages
-                              .filter(m => (m.senderId === activeChatUserId && m.receiverId === user?.id) || (m.senderId === user?.id && m.receiverId === activeChatUserId))
-                              .sort((a, b) => a.createdAt - b.createdAt)
-                              .map(m => (
-                                <div key={m.id} className={`flex ${m.senderId === user?.id ? 'justify-end' : 'justify-start'}`}>
-                                  <div className={`max-w-[75%] space-y-1`}>
-                                    <div className={`p-4 rounded-[1.5rem] text-sm leading-relaxed ${m.senderId === user?.id ? 'bg-white/10 text-white/90 rounded-tr-none' : 'bg-white/5 text-white/70 rounded-tl-none'}`}>
-                                      {m.content}
-                                    </div>
-                                    <div className={`text-[8px] opacity-20 px-2 ${m.senderId === user?.id ? 'text-right' : 'text-left'}`}>
-                                      {new Date(m.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                    </div>
-                                  </div>
-                                </div>
-                              ))}
-                            <div ref={chatEndRef} />
-                          </div>
-                          <div className="p-4 bg-black/20 border-t border-white/5">
-                            <div className="flex gap-3 bg-white/5 border border-white/10 rounded-2xl p-2 focus-within:border-white/20 transition-all">
-                              <input 
-                                type="text" 
-                                value={messageText}
-                                onChange={(e) => setMessageText(e.target.value)}
-                                onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()}
-                                placeholder="Type a whisper..."
-                                className="flex-1 bg-transparent px-4 py-2 text-xs text-white focus:outline-none"
-                              />
-                              <button 
-                                onClick={handleSendMessage}
-                                disabled={!messageText.trim()}
-                                className="w-10 h-10 rounded-xl bg-white text-black flex items-center justify-center hover:bg-gray-200 transition-all disabled:opacity-30"
-                              >
-                                <Send size={16} />
-                              </button>
-                            </div>
-                          </div>
-                        </>
-                      ) : (
-                        <div className="flex-1 flex flex-col items-center justify-center text-white/10 space-y-4 p-8 text-center">
-                          <div className="w-16 h-16 rounded-full bg-white/5 flex items-center justify-center mb-2">
-                            <MessageCircle size={32} className="opacity-20" />
-                          </div>
-                          <h4 className="text-sm font-serif italic">The silence is waiting</h4>
-                          <p className="text-[10px] uppercase tracking-widest opacity-50">Select a soul to begin whispering</p>
-                        </div>
-                      )}
-                    </div>
                   </div>
                 </div>
 
@@ -2024,131 +2263,140 @@ export default function App() {
 
         {/* Right Panel: Ambient Life */}
         {!isZenMode && (
-          <aside className="hidden xl:flex flex-col w-80 side-panel-right pt-32 px-6 space-y-8">
+          <aside className="hidden xl:flex flex-col w-80 h-full pt-32 space-y-8 overflow-y-auto scrollbar-hide shrink-0 px-6 pb-24">
             {/* Most Felt Today */}
-          <div className="bg-white/[0.03] backdrop-blur-md border border-white/10 rounded-3xl p-6 space-y-6">
-            <div className="flex items-center gap-3 text-[10px] uppercase tracking-[0.3em] text-white/40">
-              <TrendingUp size={14} />
-              <span>Most Felt Today</span>
-            </div>
-            {mostFeltPost ? (
-              <div 
-                onClick={() => { setSelectedPost(mostFeltPost); setActiveTab('home'); setExpandedPostId(mostFeltPost.id); }}
-                className="space-y-3 cursor-pointer group"
-              >
-                <p className="text-xs font-serif italic text-white/60 group-hover:text-white transition-colors line-clamp-3 leading-relaxed">
-                  "{mostFeltPost.content}"
-                </p>
-                <div className="flex items-center justify-between">
-                  <span className="text-[8px] uppercase tracking-widest text-white/20">— {mostFeltPost.isAnonymous ? 'Shadow' : mostFeltPost.username}</span>
-                  <div className="flex items-center gap-1 text-[8px] text-white/40">
-                    <Heart size={8} fill="currentColor" />
-                    <span>{reactions.filter(r => r.postId === mostFeltPost.id).length}</span>
-                  </div>
-                </div>
+            <div className="bg-white/[0.03] backdrop-blur-md border border-white/10 rounded-3xl p-6 space-y-6">
+              <div className="flex items-center gap-3 text-[10px] uppercase tracking-[0.3em] text-white/40">
+                <TrendingUp size={14} />
+                <span>Most Felt Today</span>
               </div>
-            ) : (
-              <p className="text-[10px] text-white/20 italic">The sanctuary is quiet...</p>
-            )}
-          </div>
-
-          {/* Poem of the Day */}
-          <div className="bg-white/[0.03] backdrop-blur-md border border-white/10 rounded-3xl p-6 space-y-6">
-            <div className="flex items-center gap-3 text-[10px] uppercase tracking-[0.3em] text-white/40">
-              <Award size={14} />
-              <span>Poem of the Day</span>
-            </div>
-            {poemOfTheDay ? (
-              <div 
-                onClick={() => { setSelectedPost(poemOfTheDay); setActiveTab('home'); setExpandedPostId(poemOfTheDay.id); }}
-                className="space-y-3 cursor-pointer group"
-              >
-                <p className="text-xs font-serif italic text-white/60 group-hover:text-white transition-colors line-clamp-4 leading-relaxed">
-                  {poemOfTheDay.content}
-                </p>
-                <div className="text-[8px] uppercase tracking-widest text-white/20 text-right">— {poemOfTheDay.isAnonymous ? 'Shadow' : poemOfTheDay.username}</div>
-              </div>
-            ) : (
-              <p className="text-[10px] text-white/20 italic">Ink is still flowing...</p>
-            )}
-          </div>
-
-          {/* Suggested Souls */}
-          <div className="bg-white/[0.03] backdrop-blur-md border border-white/10 rounded-3xl p-6 space-y-6">
-            <div className="flex items-center gap-3 text-[10px] uppercase tracking-[0.3em] text-white/40">
-              <Users size={14} />
-              <span>Suggested Souls</span>
-            </div>
-            <div className="space-y-4">
-              {suggestedSouls.map(soul => (
-                <div key={soul.id} className="flex items-center justify-between group">
-                  <div 
-                    onClick={() => setViewedProfileId(soul.id)}
-                    className="flex items-center gap-3 cursor-pointer"
-                  >
-                    <div className="w-8 h-8 rounded-full bg-white/5 border border-white/10 overflow-hidden">
-                      {soul.avatarUrl ? <img src={soul.avatarUrl} alt="" className="w-full h-full object-cover" /> : <UserIcon size={12} className="m-2 text-white/10" />}
+              {mostFeltPost ? (
+                <div 
+                  onClick={() => { setSelectedPost(mostFeltPost); setActiveTab('home'); setExpandedPostId(mostFeltPost.id); }}
+                  className="space-y-3 cursor-pointer group"
+                >
+                  <p className="text-xs font-serif italic text-white/60 group-hover:text-white transition-colors line-clamp-3 leading-relaxed">
+                    "{mostFeltPost.content}"
+                  </p>
+                  <div className="flex items-center justify-between">
+                    <span className="text-[8px] uppercase tracking-widest text-white/20">— {mostFeltPost.isAnonymous ? 'Shadow' : mostFeltPost.username}</span>
+                    <div className="flex items-center gap-1 text-[8px] text-white/40">
+                      <Heart size={8} fill="currentColor" />
+                      <span>{reactions.filter(r => r.postId === mostFeltPost.id).length}</span>
                     </div>
-                    <span className="text-[10px] text-white/60 group-hover:text-white transition-colors">{soul.username}</span>
                   </div>
-                  <button 
-                    onClick={() => handleFollow(soul.id)}
-                    className="text-[8px] uppercase tracking-widest text-white/40 hover:text-white transition-colors"
-                  >
-                    Follow
-                  </button>
                 </div>
-              ))}
-              {suggestedSouls.length === 0 && (
-                <p className="text-[10px] text-white/20 italic">You've met everyone here.</p>
+              ) : (
+                <p className="text-[10px] text-white/20 italic">The sanctuary is quiet...</p>
               )}
             </div>
-          </div>
-        </aside>
-      )}
-      </main>
+
+            {/* Poem of the Day */}
+            <div className="bg-white/[0.03] backdrop-blur-md border border-white/10 rounded-3xl p-6 space-y-6">
+              <div className="flex items-center gap-3 text-[10px] uppercase tracking-[0.3em] text-white/40">
+                <Award size={14} />
+                <span>Poem of the Day</span>
+              </div>
+              {poemOfTheDay ? (
+                <div 
+                  onClick={() => { setSelectedPost(poemOfTheDay); setActiveTab('home'); setExpandedPostId(poemOfTheDay.id); }}
+                  className="space-y-3 cursor-pointer group"
+                >
+                  <p className="text-xs font-serif italic text-white/60 group-hover:text-white transition-colors line-clamp-4 leading-relaxed">
+                    {poemOfTheDay.content}
+                  </p>
+                  <div className="text-[8px] uppercase tracking-widest text-white/20 text-right">— {poemOfTheDay.isAnonymous ? 'Shadow' : poemOfTheDay.username}</div>
+                </div>
+              ) : (
+                <p className="text-[10px] text-white/20 italic">Ink is still flowing...</p>
+              )}
+            </div>
+
+            {/* Suggested Souls */}
+            <div className="bg-white/[0.03] backdrop-blur-md border border-white/10 rounded-3xl p-6 space-y-6">
+              <div className="flex items-center gap-3 text-[10px] uppercase tracking-[0.3em] text-white/40">
+                <Users size={14} />
+                <span>Suggested Souls</span>
+              </div>
+              <div className="space-y-4">
+                {suggestedSouls.map(soul => (
+                  <div key={soul.id} className="flex items-center justify-between group">
+                    <div 
+                      onClick={() => setViewedProfileId(soul.id)}
+                      className="flex items-center gap-3 cursor-pointer"
+                    >
+                      <div className="w-8 h-8 rounded-full bg-white/5 border border-white/10 overflow-hidden">
+                        {soul.avatarUrl ? <img src={soul.avatarUrl} alt="" className="w-full h-full object-cover" /> : <UserIcon size={12} className="m-2 text-white/10" />}
+                      </div>
+                      <span className="text-[10px] text-white/60 group-hover:text-white transition-colors">{soul.username}</span>
+                    </div>
+                    <button 
+                      onClick={() => handleFollow(soul.id)}
+                      className="text-[8px] uppercase tracking-widest text-white/40 hover:text-white transition-colors"
+                    >
+                      Follow
+                    </button>
+                  </div>
+                ))}
+                {suggestedSouls.length === 0 && (
+                  <p className="text-[10px] text-white/20 italic">You've met everyone here.</p>
+                )}
+              </div>
+            </div>
+          </aside>
+        )}
+      </div>
+    </main>
 
       {/* Mobile Bottom Navigation */}
-      <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-50 bg-black/80 backdrop-blur-2xl border-t border-white/5 px-6 py-4">
-        <div className="flex items-center justify-between max-w-md mx-auto">
-          <button 
-            onClick={() => setActiveTab('home')}
-            className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'home' ? 'text-white' : 'text-white/30'}`}
-          >
-            <Home size={20} />
-            <span className="text-[8px] uppercase tracking-widest font-medium">Sanctuary</span>
-          </button>
-          <button 
-            onClick={() => setActiveTab('daily')}
-            className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'daily' ? 'text-white' : 'text-white/30'}`}
-          >
-            <BookOpen size={20} />
-            <span className="text-[8px] uppercase tracking-widest font-medium">Daily</span>
-          </button>
-          <div className="relative -top-8">
+      {!isZenMode && (
+        <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-50 bg-black/80 backdrop-blur-2xl border-t border-white/5 px-6 py-4">
+          <div className="flex items-center justify-between max-w-md mx-auto">
             <button 
-              onClick={() => { setWritingType('post'); setIsWriting(true); }}
-              className={`w-14 h-14 rounded-full ${currentTheme.bg} border ${currentTheme.accent} flex items-center justify-center ${currentTheme.glow} shadow-2xl transition-transform active:scale-95`}
+              onClick={() => setActiveTab('home')}
+              className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'home' ? 'text-white' : 'text-white/30'}`}
             >
-              <Plus size={24} className="text-white" />
+              <Home size={20} />
+              <span className="text-[8px] uppercase tracking-widest font-medium">Sanctuary</span>
+            </button>
+            <button 
+              onClick={() => setActiveTab('messages')}
+              className={`flex flex-col items-center gap-1 transition-all relative ${activeTab === 'messages' ? 'text-white' : 'text-white/30'}`}
+            >
+              <MessageCircle size={20} />
+              {messages.filter(m => m.receiverId === user?.id && !m.isRead).length > 0 && (
+                <span className="absolute top-0 right-0 w-2 h-2 bg-white rounded-full shadow-[0_0_8px_rgba(255,255,255,0.5)]" />
+              )}
+              <span className="text-[8px] uppercase tracking-widest font-medium">Whispers</span>
+            </button>
+            <div className="relative -top-8">
+              <button 
+                onClick={() => { setWritingType('post'); setIsWriting(true); }}
+                className={`w-14 h-14 rounded-full ${currentTheme.bg} border ${currentTheme.accent} flex items-center justify-center ${currentTheme.glow} shadow-2xl transition-transform active:scale-95`}
+              >
+                <Plus size={24} className="text-white" />
+              </button>
+            </div>
+            <button 
+              onClick={() => setActiveTab('notifications')}
+              className={`flex flex-col items-center gap-1 transition-all relative ${activeTab === 'notifications' ? 'text-white' : 'text-white/30'}`}
+            >
+              <Bell size={20} />
+              {notifications.filter(n => !n.isRead).length > 0 && (
+                <span className="absolute top-0 right-0 w-2 h-2 bg-white rounded-full shadow-[0_0_8px_rgba(255,255,255,0.5)]" />
+              )}
+              <span className="text-[8px] uppercase tracking-widest font-medium">Echoes</span>
+            </button>
+            <button 
+              onClick={() => setActiveTab('profile')}
+              className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'profile' ? 'text-white' : 'text-white/30'}`}
+            >
+              <UserIcon size={20} />
+              <span className="text-[8px] uppercase tracking-widest font-medium">Profile</span>
             </button>
           </div>
-          <button 
-            onClick={() => setActiveTab('analytics')}
-            className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'analytics' ? 'text-white' : 'text-white/30'}`}
-          >
-            <BarChart3 size={20} />
-            <span className="text-[8px] uppercase tracking-widest font-medium">Resonance</span>
-          </button>
-          <button 
-            onClick={() => user ? setViewedProfileId(user.id) : null}
-            className={`flex flex-col items-center gap-1 transition-all ${viewedProfileId === user?.id ? 'text-white' : 'text-white/30'}`}
-          >
-            <UserIcon size={20} />
-            <span className="text-[8px] uppercase tracking-widest font-medium">Profile</span>
-          </button>
-        </div>
-      </nav>
+        </nav>
+      )}
 
     </div>
     </ErrorBoundary>
