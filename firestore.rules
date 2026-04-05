@@ -162,11 +162,11 @@ service cloud.firestore {
     }
 
     match /{path=**}/reflections/{reflectionId} {
-      allow read: if isAuthenticated();
+      allow read: if true;
     }
 
     match /{path=**}/reactions/{reactionId} {
-      allow read: if isAuthenticated();
+      allow read: if true;
     }
 
     match /messages/{messageId} {
