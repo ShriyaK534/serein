@@ -370,6 +370,14 @@ const WritingMode = ({
     }
   }, [currentUser, type]);
 
+  useEffect(() => {
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleEsc);
+    return () => window.removeEventListener('keydown', handleEsc);
+  }, [onClose]);
+
   const handleSubmit = () => {
     if (!content.trim()) return;
     onPost(content, category, isAnonymous, postType);
@@ -404,14 +412,23 @@ const WritingMode = ({
     setShowDrafts(false);
   };
 
+  useEffect(() => {
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleEsc);
+    return () => window.removeEventListener('keydown', handleEsc);
+  }, [onClose]);
+
   return (
     <motion.div 
       initial={{ opacity: 0 }} 
       animate={{ opacity: 1 }} 
       exit={{ opacity: 0 }}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/95 p-4"
+      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/95 p-4"
+      onClick={onClose}
     >
-      <button onClick={onClose} className="absolute top-4 right-4 md:top-8 md:right-8 text-gray-500 hover:text-white transition-colors">
+      <button onClick={onClose} className="absolute top-4 right-4 md:top-8 md:right-8 text-gray-500 hover:text-white transition-colors z-[110]">
         <X size={24} className="md:w-8 md:h-8" />
       </button>
       
@@ -419,6 +436,7 @@ const WritingMode = ({
         initial={{ scale: 0.95, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
         className="w-full max-w-3xl"
+        onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-6 md:mb-8 flex flex-wrap gap-4 items-center justify-between">
           {type === 'post' && (
@@ -557,6 +575,8 @@ const ProfileView = ({
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    let unsubscribe: (() => void) | undefined;
+    
     const fetchProfile = async () => {
       const u = await storage.getUserById(userId);
       if (u) {
@@ -571,13 +591,15 @@ const ProfileView = ({
           where('userId', '==', userId),
           orderBy('createdAt', 'desc')
         );
-        const unsubscribe = onSnapshot(postsQuery, (snapshot) => {
+        unsubscribe = onSnapshot(postsQuery, (snapshot) => {
           setUserPosts(snapshot.docs.map(doc => doc.data() as Post));
         }, (error) => handleFirestoreError(error, OperationType.LIST, `users/${userId}/posts`));
-        return () => unsubscribe();
       }
     };
     fetchProfile();
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
   }, [userId]);
 
   useEffect(() => {
@@ -626,6 +648,14 @@ const ProfileView = ({
     }
   };
 
+  useEffect(() => {
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleEsc);
+    return () => window.removeEventListener('keydown', handleEsc);
+  }, [onClose]);
+
   if (!profileUser) return null;
 
   return (
@@ -633,9 +663,10 @@ const ProfileView = ({
       initial={{ opacity: 0 }} 
       animate={{ opacity: 1 }} 
       exit={{ opacity: 0 }}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-md p-4"
+      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/90 backdrop-blur-md p-4"
+      onClick={onClose}
     >
-      <button onClick={onClose} className="absolute top-4 right-4 md:top-8 md:right-8 text-gray-500 hover:text-white transition-colors">
+      <button onClick={onClose} className="absolute top-4 right-4 md:top-8 md:right-8 text-gray-500 hover:text-white transition-colors z-[110]">
         <X size={24} className="md:w-8 md:h-8" />
       </button>
  
@@ -643,6 +674,7 @@ const ProfileView = ({
         initial={{ y: 20, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
         className="w-full max-w-2xl bg-[#121212] border border-white/10 rounded-2xl p-6 md:p-8 max-h-[90vh] overflow-y-auto"
+        onClick={(e) => e.stopPropagation()}
       >
         <div className="flex flex-col sm:flex-row items-center gap-6 mb-8 text-center sm:text-left">
           <div className="w-20 h-20 rounded-full bg-white/5 flex items-center justify-center border border-white/10 overflow-hidden shrink-0">
@@ -906,6 +938,16 @@ export default function App() {
   const [showSearch, setShowSearch] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
+  const chatEndRef = useRef<HTMLDivElement>(null);
+
+  const scrollToBottom = () => {
+    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  };
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages, activeChatUserId]);
+
   const mostFeltPost = useMemo(() => {
     return [...posts].sort((a, b) => {
       const aCount = reactions.filter(r => r.postId === a.id).length;
@@ -1032,12 +1074,19 @@ export default function App() {
 
   const getChatPartners = () => {
     if (!user) return [];
-    const partners = new Set<string>();
+    const partners = new Map<string, Message>();
     messages.forEach(m => {
-      if (m.senderId === user.id) partners.add(m.receiverId);
-      if (m.receiverId === user.id) partners.add(m.senderId);
+      const partnerId = m.senderId === user.id ? m.receiverId : m.senderId;
+      const existing = partners.get(partnerId);
+      if (!existing || m.createdAt > existing.createdAt) {
+        partners.set(partnerId, m);
+      }
     });
-    return Array.from(partners);
+    return Array.from(partners.keys()).sort((a, b) => {
+      const msgA = partners.get(a)!;
+      const msgB = partners.get(b)!;
+      return msgB.createdAt - msgA.createdAt;
+    });
   };
 
   useEffect(() => {
@@ -1325,11 +1374,12 @@ export default function App() {
       </nav>
 
       {/* Main Sanctuary Content */}
-      <main className="max-w-7xl mx-auto flex gap-8 pt-32 pb-24 px-6 min-h-screen relative">
+      <main className={`main-container relative ${isZenMode ? 'bg-black/20' : ''}`}>
         
         {/* Left Panel: Identity */}
-        <aside className="hidden lg:flex flex-col w-64 sticky top-32 h-fit space-y-6">
-          <div className="bg-white/[0.03] backdrop-blur-md border border-white/10 rounded-3xl p-6 space-y-6">
+        {!isZenMode && (
+          <aside className="hidden lg:flex flex-col w-64 side-panel-left pt-32 px-6 space-y-6">
+            <div className="bg-white/[0.03] backdrop-blur-md border border-white/10 rounded-3xl p-6 space-y-6">
             <div className="flex flex-col items-center text-center space-y-4">
               <div className="w-20 h-20 rounded-full bg-white/5 border border-white/10 overflow-hidden relative group">
                 {user?.avatarUrl ? (
@@ -1401,9 +1451,10 @@ export default function App() {
             </button>
           </div>
         </aside>
+      )}
 
         {/* Main Feed */}
-        <section className="flex-1 max-w-2xl mx-auto">
+        <section className={`scrollable-feed pt-32 pb-24 px-6 transition-all duration-700 ${isZenMode ? 'w-full max-w-4xl' : 'flex-1 max-w-2xl mx-auto lg:ml-64 xl:mr-80'}`}>
           {/* Ripple Overlay */}
           {ripple && (
             <div 
@@ -1651,79 +1702,114 @@ export default function App() {
                 {/* Messaging Section */}
                 <div className="space-y-8">
                   <h3 className="text-xs uppercase tracking-[0.4em] text-white/30 border-b border-white/5 pb-4">Sanctuary Whispers</h3>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  <div className="flex flex-col md:flex-row gap-6 h-[500px]">
                     {/* Chat List */}
-                    <div className="md:col-span-1 space-y-2">
+                    <div className="w-full md:w-1/3 space-y-2 overflow-y-auto pr-2 scrollbar-hide border-r border-white/5">
                       {getChatPartners().length > 0 ? (
                         getChatPartners().map(partnerId => {
                           const partner = allUsers.find(u => u.id === partnerId);
+                          const lastMsg = messages
+                            .filter(m => (m.senderId === partnerId && m.receiverId === user?.id) || (m.senderId === user?.id && m.receiverId === partnerId))
+                            .sort((a, b) => b.createdAt - a.createdAt)[0];
+                          
                           return (
                             <button
                               key={partnerId}
                               onClick={() => setActiveChatUserId(partnerId)}
-                              className={`w-full p-3 rounded-xl border transition-all text-left flex items-center gap-3 ${activeChatUserId === partnerId ? 'bg-white/10 border-white/20' : 'bg-white/5 border-white/5 hover:bg-white/10'}`}
+                              className={`w-full p-4 rounded-2xl border transition-all text-left flex items-center gap-4 ${activeChatUserId === partnerId ? 'bg-white/10 border-white/20' : 'bg-white/5 border-white/5 hover:bg-white/10'}`}
                             >
-                              <div className="w-8 h-8 rounded-full bg-white/5 border border-white/10 overflow-hidden flex items-center justify-center">
-                                {partner?.avatarUrl ? <img src={partner.avatarUrl} alt="" className="w-full h-full object-cover" /> : <UserIcon size={12} className="text-white/40" />}
+                              <div className="w-10 h-10 rounded-full bg-white/5 border border-white/10 overflow-hidden flex items-center justify-center shrink-0">
+                                {partner?.avatarUrl ? <img src={partner.avatarUrl} alt="" className="w-full h-full object-cover" /> : <UserIcon size={16} className="text-white/40" />}
                               </div>
                               <div className="flex-1 overflow-hidden">
-                                <div className="text-[10px] text-white/80 truncate">{partner?.username || `User ${partnerId.slice(0, 5)}`}</div>
-                                <div className="text-[8px] text-white/30 truncate">
-                                  {messages.filter(m => (m.senderId === partnerId || m.receiverId === partnerId)).sort((a, b) => b.createdAt - a.createdAt)[0]?.content}
+                                <div className="flex justify-between items-center mb-1">
+                                  <div className="text-xs font-medium text-white/80 truncate">{partner?.username || `Soul`}</div>
+                                  {lastMsg && (
+                                    <div className="text-[8px] text-white/20">
+                                      {new Date(lastMsg.createdAt).toLocaleDateString([], { month: 'short', day: 'numeric' })}
+                                    </div>
+                                  )}
+                                </div>
+                                <div className="text-[10px] text-white/40 truncate">
+                                  {lastMsg?.content || "..."}
                                 </div>
                               </div>
                             </button>
                           );
                         })
                       ) : (
-                        <div className="text-[10px] text-white/20 italic p-4 border border-dashed border-white/5 rounded-xl text-center">
+                        <div className="text-[10px] text-white/20 italic p-8 border border-dashed border-white/5 rounded-2xl text-center">
                           No whispers yet.
                         </div>
                       )}
                     </div>
 
                     {/* Chat Window */}
-                    <div className="md:col-span-2 bg-white/[0.02] border border-white/5 rounded-2xl flex flex-col h-[400px]">
+                    <div className="flex-1 bg-white/[0.02] border border-white/5 rounded-3xl flex flex-col overflow-hidden">
                       {activeChatUserId ? (
                         <>
-                          <div className="p-4 border-b border-white/5 flex items-center justify-between">
-                            <span className="text-[10px] uppercase tracking-widest text-white/40">Whispering with {allUsers.find(u => u.id === activeChatUserId)?.username || `User ${activeChatUserId.slice(0, 5)}`}</span>
-                            <button onClick={() => setActiveChatUserId(null)} className="text-white/20 hover:text-white"><Plus size={14} className="rotate-45" /></button>
+                          <div className="p-4 bg-white/[0.03] border-b border-white/5 flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                              <div className="w-8 h-8 rounded-full bg-white/5 border border-white/10 overflow-hidden">
+                                {allUsers.find(u => u.id === activeChatUserId)?.avatarUrl ? (
+                                  <img src={allUsers.find(u => u.id === activeChatUserId)?.avatarUrl} alt="" className="w-full h-full object-cover" />
+                                ) : (
+                                  <UserIcon size={12} className="m-2 text-white/40" />
+                                )}
+                              </div>
+                              <span className="text-[10px] uppercase tracking-widest text-white/60">
+                                {allUsers.find(u => u.id === activeChatUserId)?.username || `Soul`}
+                              </span>
+                            </div>
+                            <button onClick={() => setActiveChatUserId(null)} className="text-white/20 hover:text-white p-2">
+                              <X size={16} />
+                            </button>
                           </div>
-                          <div className="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-hide">
+                          <div className="flex-1 overflow-y-auto p-6 space-y-6 scrollbar-hide">
                             {messages
                               .filter(m => (m.senderId === activeChatUserId && m.receiverId === user?.id) || (m.senderId === user?.id && m.receiverId === activeChatUserId))
                               .sort((a, b) => a.createdAt - b.createdAt)
                               .map(m => (
                                 <div key={m.id} className={`flex ${m.senderId === user?.id ? 'justify-end' : 'justify-start'}`}>
-                                  <div className={`max-w-[80%] p-3 rounded-2xl text-sm ${m.senderId === user?.id ? 'bg-white/10 text-white/90 rounded-tr-none' : 'bg-white/5 text-white/70 rounded-tl-none'}`}>
-                                    {m.content}
-                                    <div className="text-[7px] opacity-30 mt-1 text-right">{new Date(m.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
+                                  <div className={`max-w-[75%] space-y-1`}>
+                                    <div className={`p-4 rounded-[1.5rem] text-sm leading-relaxed ${m.senderId === user?.id ? 'bg-white/10 text-white/90 rounded-tr-none' : 'bg-white/5 text-white/70 rounded-tl-none'}`}>
+                                      {m.content}
+                                    </div>
+                                    <div className={`text-[8px] opacity-20 px-2 ${m.senderId === user?.id ? 'text-right' : 'text-left'}`}>
+                                      {new Date(m.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                    </div>
                                   </div>
                                 </div>
                               ))}
+                            <div ref={chatEndRef} />
                           </div>
-                          <div className="p-4 border-t border-white/5 flex gap-2">
-                            <input 
-                              type="text" 
-                              value={messageText}
-                              onChange={(e) => setMessageText(e.target.value)}
-                              onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()}
-                              placeholder="Type a whisper..."
-                              className="flex-1 bg-white/5 border border-white/10 rounded-full px-4 py-2 text-xs text-white focus:outline-none focus:border-white/20"
-                            />
-                            <button 
-                              onClick={handleSendMessage}
-                              className="p-2 rounded-full bg-white/10 hover:bg-white/20 text-white transition-all"
-                            >
-                              <Send size={14} />
-                            </button>
+                          <div className="p-4 bg-black/20 border-t border-white/5">
+                            <div className="flex gap-3 bg-white/5 border border-white/10 rounded-2xl p-2 focus-within:border-white/20 transition-all">
+                              <input 
+                                type="text" 
+                                value={messageText}
+                                onChange={(e) => setMessageText(e.target.value)}
+                                onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()}
+                                placeholder="Type a whisper..."
+                                className="flex-1 bg-transparent px-4 py-2 text-xs text-white focus:outline-none"
+                              />
+                              <button 
+                                onClick={handleSendMessage}
+                                disabled={!messageText.trim()}
+                                className="w-10 h-10 rounded-xl bg-white text-black flex items-center justify-center hover:bg-gray-200 transition-all disabled:opacity-30"
+                              >
+                                <Send size={16} />
+                              </button>
+                            </div>
                           </div>
                         </>
                       ) : (
-                        <div className="flex-1 flex flex-col items-center justify-center text-white/10 space-y-4">
-                          <MessageCircle size={32} />
-                          <p className="text-xs uppercase tracking-widest">Select a soul to whisper to</p>
+                        <div className="flex-1 flex flex-col items-center justify-center text-white/10 space-y-4 p-8 text-center">
+                          <div className="w-16 h-16 rounded-full bg-white/5 flex items-center justify-center mb-2">
+                            <MessageCircle size={32} className="opacity-20" />
+                          </div>
+                          <h4 className="text-sm font-serif italic">The silence is waiting</h4>
+                          <p className="text-[10px] uppercase tracking-widest opacity-50">Select a soul to begin whispering</p>
                         </div>
                       )}
                     </div>
@@ -1928,19 +2014,6 @@ export default function App() {
                     </div>
 
                     <div className="h-px w-full bg-white/5" />
-
-                    <div className="space-y-6">
-                      <h4 className="text-[10px] uppercase tracking-widest text-white/30">Sanctuary Experience</h4>
-                      <div className="flex items-center justify-between">
-                        <div className="space-y-1">
-                          <div className="text-sm text-white/70">Zen Mode</div>
-                          <div className="text-[10px] text-white/30">Hide all distractions for deep focus</div>
-                        </div>
-                        <button className="w-10 h-5 rounded-full bg-white/5 border border-white/10 relative">
-                          <div className="absolute left-1 top-1 w-3 h-3 rounded-full bg-white/20" />
-                        </button>
-                      </div>
-                    </div>
                   </div>
                 </div>
               </motion.div>
@@ -1950,8 +2023,9 @@ export default function App() {
         </section>
 
         {/* Right Panel: Ambient Life */}
-        <aside className="hidden xl:flex flex-col w-80 sticky top-32 h-fit space-y-8">
-          {/* Most Felt Today */}
+        {!isZenMode && (
+          <aside className="hidden xl:flex flex-col w-80 side-panel-right pt-32 px-6 space-y-8">
+            {/* Most Felt Today */}
           <div className="bg-white/[0.03] backdrop-blur-md border border-white/10 rounded-3xl p-6 space-y-6">
             <div className="flex items-center gap-3 text-[10px] uppercase tracking-[0.3em] text-white/40">
               <TrendingUp size={14} />
@@ -2031,6 +2105,7 @@ export default function App() {
             </div>
           </div>
         </aside>
+      )}
       </main>
 
       {/* Mobile Bottom Navigation */}
@@ -2079,4 +2154,3 @@ export default function App() {
     </ErrorBoundary>
   );
 }
-

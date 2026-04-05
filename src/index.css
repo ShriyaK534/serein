@@ -9,7 +9,38 @@
 @layer base {
   body {
     @apply bg-[#050505] text-gray-200 font-sans selection:bg-white/10;
-    overflow-x: hidden;
+    height: 100vh;
+    overflow: hidden;
+  }
+
+  .main-container {
+    height: 100vh;
+    display: flex;
+    justify-content: center;
+    overflow: hidden;
+  }
+
+  .side-panel-left {
+    position: fixed;
+    top: 0;
+    left: 0;
+    height: 100vh;
+    z-index: 40;
+  }
+
+  .side-panel-right {
+    position: fixed;
+    top: 0;
+    right: 0;
+    height: 100vh;
+    z-index: 40;
+  }
+
+  .scrollable-feed {
+    height: 100vh;
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.1) transparent;
   }
 
   h1, h2, h3, .poetry-content {
