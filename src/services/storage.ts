@@ -159,8 +159,11 @@ export const storage = {
   // --- Post Operations ---
   savePost: async (post: Post) => {
     try {
+      console.log("storage.savePost called for:", post.id);
       await setDoc(doc(db, 'posts', post.id), post);
+      console.log("storage.savePost success");
     } catch (e) {
+      console.error("storage.savePost error:", e);
       handleFirestoreError(e, OperationType.WRITE, `posts/${post.id}`);
     }
   },
@@ -186,9 +189,12 @@ export const storage = {
   // --- Reflection Operations ---
   saveReflection: async (reflection: Reflection) => {
     try {
+      console.log("storage.saveReflection called for:", reflection.id);
       const ref = doc(db, 'reflections', reflection.id);
       await setDoc(ref, reflection);
+      console.log("storage.saveReflection success");
     } catch (e) {
+      console.error("storage.saveReflection error:", e);
       handleFirestoreError(e, OperationType.WRITE, `reflections/${reflection.id}`);
     }
   },

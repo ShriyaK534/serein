@@ -387,11 +387,17 @@ const WritingMode = ({
   }, [onClose]);
 
   const handleSubmit = async () => {
-    if (!content.trim() || isSubmitting) return;
+    console.log("handleSubmit triggered in WritingMode");
+    if (!content.trim() || isSubmitting) {
+      console.log("handleSubmit aborted:", { hasContent: !!content.trim(), isSubmitting });
+      return;
+    }
     
     setIsSubmitting(true);
     try {
+      console.log("Calling onPost...");
       await onPost(content, category, isAnonymous, postType);
+      console.log("onPost completed successfully");
       if (currentUser && !initialData) {
         // If it was a draft, delete it after posting
         const existingDraft = drafts.find(d => d.content === content);
@@ -427,14 +433,6 @@ const WritingMode = ({
     setIsAnonymous(draft.isAnonymous);
     setShowDrafts(false);
   };
-
-  useEffect(() => {
-    const handleEsc = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', handleEsc);
-    return () => window.removeEventListener('keydown', handleEsc);
-  }, [onClose]);
 
   return (
     <motion.div 
@@ -1345,6 +1343,7 @@ export default function App() {
   const handlePost = async (content: string, category?: Category, isAnonymous?: boolean, postType?: 'poem' | 'quote' | 'thought') => {
     if (!user) {
       console.error("Attempted to post without user session");
+      setAuthModal(true);
       return;
     }
 
@@ -1352,6 +1351,7 @@ export default function App() {
 
     try {
       if (isEditingPost && selectedPost) {
+        console.log("Updating existing post:", selectedPost.id);
         const updatedPost: Post = { 
           ...selectedPost, 
           content, 
@@ -1361,7 +1361,9 @@ export default function App() {
         };
         await storage.updatePost(updatedPost);
         setIsEditingPost(false);
+        console.log("Post updated successfully");
       } else {
+        console.log("Creating new post...");
         const newPost: Post = {
           id: Math.random().toString(36).substr(2, 9),
           userId: user.id,
@@ -1375,10 +1377,12 @@ export default function App() {
         };
         await storage.savePost(newPost);
         setSelectedPost(newPost);
+        console.log("New post created successfully:", newPost.id);
       }
-      setIsWriting(false);
+      // Modal closing is handled by WritingMode's onClose
     } catch (err) {
       console.error("Failed to post:", err);
+      throw err;
     }
   };
 
@@ -1408,6 +1412,7 @@ export default function App() {
   const handleReflection = async (content: string) => {
     if (!user) {
       console.error("Attempted to reflect without user session");
+      setAuthModal(true);
       return;
     }
     if (!selectedPost) {
@@ -1427,7 +1432,7 @@ export default function App() {
         avatarUrl: user.avatarUrl,
         content,
         createdAt: Date.now(),
-        parentId: replyToId && replyToId.trim() !== '' ? replyToId : undefined
+        parentId: (replyToId && typeof replyToId === 'string' && replyToId.trim() !== '') ? replyToId : undefined
       };
       console.log("Constructed reflection object:", newReflection);
       await storage.saveReflection(newReflection);
@@ -1435,22 +1440,25 @@ export default function App() {
       // Ensure the reflections list is open for this post so the user sees their response
       setOpenReflectionPostId(selectedPost.id);
       
-      // Add notification for post owner
+      // Add notification for post owner (don't let this block the UI if it fails)
       if (selectedPost.userId !== user.id) {
-        const notification: SereinNotification = {
-          id: Math.random().toString(36).substr(2, 9),
-          userId: selectedPost.userId,
-          type: 'reflection',
-          fromUserId: user.id,
-          fromUsername: user.username,
-          postId: selectedPost.id,
-          createdAt: Date.now(),
-          isRead: false
-        };
-        await storage.saveNotification(notification);
+        try {
+          const notification: SereinNotification = {
+            id: Math.random().toString(36).substr(2, 9),
+            userId: selectedPost.userId,
+            type: 'reflection',
+            fromUserId: user.id,
+            fromUsername: user.username,
+            postId: selectedPost.id,
+            createdAt: Date.now(),
+            isRead: false
+          };
+          await storage.saveNotification(notification);
+        } catch (notifyErr) {
+          console.warn("Failed to send notification:", notifyErr);
+        }
       }
       setReplyToId(null);
-      setIsWriting(false);
       console.log("Reflection saved successfully");
     } catch (err) {
       console.error("Failed to reflect:", err);
