@@ -175,6 +175,13 @@ service cloud.firestore {
       allow update: if isMessageParticipant() && hasOnlyAllowedFields(['id', 'senderId', 'receiverId', 'content', 'createdAt', 'isRead']) && (request.resource.data.isRead == true);
     }
 
+    match /notifications/{notificationId} {
+      allow read: if isAuthenticated() && request.auth.uid == resource.data.userId;
+      allow create: if isAuthenticated();
+      allow update: if isAuthenticated() && request.auth.uid == resource.data.userId && hasOnlyAllowedFields(['id', 'userId', 'type', 'fromUserId', 'fromUsername', 'postId', 'createdAt', 'isRead']) && request.resource.data.isRead == true;
+      allow delete: if isAuthenticated() && request.auth.uid == resource.data.userId;
+    }
+
     // Default deny
     match /{path=**} {
       allow read, write: if false;

@@ -205,14 +205,17 @@ export const storage = {
   saveReaction: async (reaction: Reaction) => {
     try {
       const ref = doc(db, 'posts', reaction.postId, 'reactions', reaction.id);
-      const snap = await getDoc(ref);
-      if (snap.exists()) {
-        await deleteDoc(ref);
-      } else {
-        await setDoc(ref, reaction);
-      }
+      await setDoc(ref, reaction);
     } catch (e) {
       handleFirestoreError(e, OperationType.WRITE, `posts/${reaction.postId}/reactions/${reaction.id}`);
+    }
+  },
+
+  deleteReaction: async (postId: string, reactionId: string) => {
+    try {
+      await deleteDoc(doc(db, 'posts', postId, 'reactions', reactionId));
+    } catch (e) {
+      handleFirestoreError(e, OperationType.DELETE, `posts/${postId}/reactions/${reactionId}`);
     }
   },
 

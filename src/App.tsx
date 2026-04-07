@@ -938,6 +938,7 @@ export default function App() {
   const [isZenMode, setIsZenMode] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [showSearch, setShowSearch] = useState(false);
+  const [confirmModal, setConfirmModal] = useState<{ isOpen: boolean, title: string, message: string, onConfirm: () => void }>({ isOpen: false, title: '', message: '', onConfirm: () => {} });
   const searchInputRef = useRef<HTMLInputElement>(null);
 
   const chatEndRef = useRef<HTMLDivElement>(null);
@@ -1171,8 +1172,16 @@ export default function App() {
   };
 
   const handleClearChat = async () => {
-    if (!user || !activeChatUserId || !confirm('Are you sure you want to clear these whispers? They will be lost to the void.')) return;
-    await storage.clearConversation(user.id, activeChatUserId);
+    if (!user || !activeChatUserId) return;
+    setConfirmModal({
+      isOpen: true,
+      title: 'Clear Whispers',
+      message: 'Are you sure you want to clear these whispers? They will be lost to the void.',
+      onConfirm: async () => {
+        await storage.clearConversation(user.id, activeChatUserId);
+        setConfirmModal(prev => ({ ...prev, isOpen: false }));
+      }
+    });
   };
 
   const handleMarkAllNotificationsAsRead = async () => {
@@ -1223,9 +1232,17 @@ export default function App() {
   };
 
   const handleDeletePost = async () => {
-    if (!user || !selectedPost || !confirm('Are you sure you want to release this thought back to the silence?')) return;
-    await storage.deletePost(selectedPost.id);
-    setSelectedPost(posts.length > 1 ? (posts[0].id === selectedPost.id ? posts[1] : posts[0]) : null);
+    if (!user || !selectedPost) return;
+    setConfirmModal({
+      isOpen: true,
+      title: 'Release Thought',
+      message: 'Are you sure you want to release this thought back to the silence? It will be lost to the void.',
+      onConfirm: async () => {
+        await storage.deletePost(selectedPost.id);
+        setSelectedPost(posts.length > 1 ? (posts[0].id === selectedPost.id ? posts[1] : posts[0]) : null);
+        setConfirmModal(prev => ({ ...prev, isOpen: false }));
+      }
+    });
   };
 
   const handleReflection = async (content: string) => {
@@ -1264,31 +1281,58 @@ export default function App() {
     }
   };
 
-  const handleReaction = async (type: Reaction['type'], e: React.MouseEvent) => {
-    if (!user || !selectedPost) return;
+  const handleDeleteReflection = async (postId: string, reflectionId: string) => {
+    if (!user) return;
+    setConfirmModal({
+      isOpen: true,
+      title: 'Release Reflection',
+      message: 'Are you sure you want to release this reflection? It will be lost to the void.',
+      onConfirm: async () => {
+        await storage.deleteReflection(postId, reflectionId);
+        setConfirmModal(prev => ({ ...prev, isOpen: false }));
+      }
+    });
+  };
+
+  const handleReaction = async (postId: string, type: Reaction['type'], e: React.MouseEvent) => {
+    if (!user) return;
     
     // Ripple effect
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
     setRipple({ x: e.clientX, y: e.clientY });
     setTimeout(() => setRipple(null), 1000);
 
+    // Check if user already reacted with this type
+    const userReactionsOfType = reactions.filter(r => 
+      r.postId === postId && 
+      r.userId === user.id && 
+      r.type === type
+    );
+
+    if (userReactionsOfType.length > 0) {
+      // Remove all reactions of this type (toggle off)
+      await Promise.all(userReactionsOfType.map(r => storage.deleteReaction(postId, r.id)));
+      return;
+    }
+
     const reaction: Reaction = {
       id: Math.random().toString(36).substr(2, 9),
-      postId: selectedPost.id,
+      postId: postId,
       userId: user.id,
       type
     };
     await storage.saveReaction(reaction);
 
     // Add notification for post owner
-    if (selectedPost.userId !== user.id) {
+    const post = posts.find(p => p.id === postId);
+    if (post && post.userId !== user.id) {
       const notification: SereinNotification = {
         id: Math.random().toString(36).substr(2, 9),
-        userId: selectedPost.userId,
+        userId: post.userId,
         type: 'reaction',
         fromUserId: user.id,
         fromUsername: user.username,
-        postId: selectedPost.id,
+        postId: post.id,
         createdAt: Date.now(),
         isRead: false
       };
@@ -1478,8 +1522,8 @@ export default function App() {
       )}
 
       {/* Main Sanctuary Content */}
-      <main className={`h-screen overflow-hidden relative ${isZenMode ? 'bg-[#030303]' : ''}`}>
-        <div className="max-w-7xl mx-auto h-full flex relative px-6">
+      <main className={`min-h-screen relative ${isZenMode ? 'bg-[#030303]' : ''}`}>
+        <div className="max-w-7xl mx-auto flex relative px-6">
           
           {/* Left Panel: Identity */}
           {!isZenMode && (
@@ -1583,7 +1627,7 @@ export default function App() {
           )}
 
           {/* Main Feed */}
-          <section className={`flex-1 h-full overflow-y-auto pt-32 pb-24 px-6 scrollbar-hide transition-all duration-700 ${isZenMode ? 'max-w-4xl mx-auto' : ''}`}>
+          <section className={`flex-1 pt-32 pb-40 px-6 transition-all duration-700 ${isZenMode ? 'max-w-4xl mx-auto' : 'lg:ml-64 xl:mr-80'}`}>
           {/* Ripple Overlay */}
           {ripple && (
             <div 
@@ -1593,7 +1637,7 @@ export default function App() {
           )}
 
           {/* Tab Views */}
-          <div className="w-full scrollbar-hide">
+          <div className="w-full">
             <AnimatePresence mode="wait">
               {activeTab === 'home' && (
                 <motion.div
@@ -1676,7 +1720,7 @@ export default function App() {
                                       return (
                                         <button 
                                           key={type}
-                                          onClick={(e) => { setSelectedPost(post); handleReaction(type, e); }}
+                                          onClick={(e) => { setSelectedPost(post); handleReaction(post.id, type, e); }}
                                           className={`flex items-center gap-2 transition-all ${hasReacted ? 'text-white' : 'text-white/10 hover:text-white/30'}`}
                                           title={`${count} people ${type} this`}
                                         >
@@ -1726,12 +1770,22 @@ export default function App() {
                                                   </div>
                                                   <span>{ref.username}</span>
                                                 </div>
-                                                <button 
-                                                  onClick={() => { setSelectedPost(post); setWritingType('reflection'); setReplyToId(ref.id); setIsWriting(true); }}
-                                                  className="text-[7px] uppercase tracking-widest text-white/20 hover:text-white transition-all"
-                                                >
-                                                  Echo
-                                                </button>
+                                                <div className="flex items-center gap-3">
+                                                  <button 
+                                                    onClick={() => { setSelectedPost(post); setWritingType('reflection'); setReplyToId(ref.id); setIsWriting(true); }}
+                                                    className="text-[7px] uppercase tracking-widest text-white/20 hover:text-white transition-all"
+                                                  >
+                                                    Echo
+                                                  </button>
+                                                  {user?.id === ref.userId && (
+                                                    <button 
+                                                      onClick={() => handleDeleteReflection(post.id, ref.id)}
+                                                      className="text-[7px] uppercase tracking-widest text-red-400/40 hover:text-red-400 transition-all"
+                                                    >
+                                                      Release
+                                                    </button>
+                                                  )}
+                                                </div>
                                               </div>
                                               <p className="text-xs font-serif italic text-white/50">"{ref.content}"</p>
                                             </div>
@@ -1962,8 +2016,8 @@ export default function App() {
                 </div>
 
                 <div className="max-w-2xl space-y-4">
-                  {notifications.length > 0 ? (
-                    notifications.map((n, idx) => {
+                  {notifications.filter(n => !n.postId || posts.some(p => p.id === n.postId)).length > 0 ? (
+                    notifications.filter(n => !n.postId || posts.some(p => p.id === n.postId)).map((n, idx) => {
                       const fromUser = allUsers.find(u => u.id === n.fromUserId);
                       return (
                         <motion.div
@@ -2397,6 +2451,46 @@ export default function App() {
           </div>
         </nav>
       )}
+
+      {/* Confirm Modal */}
+      <AnimatePresence>
+        {confirmModal.isOpen && (
+          <motion.div 
+            initial={{ opacity: 0 }} 
+            animate={{ opacity: 1 }} 
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[200] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4"
+            onClick={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
+          >
+            <motion.div 
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="w-full max-w-sm bg-[#0a0a0a] border border-white/10 rounded-3xl p-8 space-y-6"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="space-y-2">
+                <h3 className="text-lg font-serif text-white/90">{confirmModal.title}</h3>
+                <p className="text-xs text-white/40 leading-relaxed">{confirmModal.message}</p>
+              </div>
+              <div className="flex gap-4">
+                <button 
+                  onClick={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
+                  className="flex-1 py-3 rounded-xl bg-white/5 hover:bg-white/10 text-[10px] uppercase tracking-widest text-white/60 transition-all"
+                >
+                  Cancel
+                </button>
+                <button 
+                  onClick={confirmModal.onConfirm}
+                  className="flex-1 py-3 rounded-xl bg-white text-black text-[10px] uppercase tracking-widest font-bold hover:bg-white/90 transition-all"
+                >
+                  Confirm
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
     </div>
     </ErrorBoundary>
