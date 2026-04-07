@@ -1264,14 +1264,14 @@ export default function App() {
   useEffect(() => {
     if (!isAuthReady) return;
 
-    const reflectionsQuery = collectionGroup(db, 'reflections');
+    const reflectionsQuery = collection(db, 'reflections');
     const unsubscribeReflections = onSnapshot(reflectionsQuery, (snapshot) => {
       const r = snapshot.docs.map(doc => doc.data() as Reflection);
       // Sort reflections by date
       setReflections(r.sort((a, b) => a.createdAt - b.createdAt));
     }, (error) => handleFirestoreError(error, OperationType.LIST, 'reflections'));
 
-    const reactionsQuery = collectionGroup(db, 'reactions');
+    const reactionsQuery = collection(db, 'reactions');
     const unsubscribeReactions = onSnapshot(reactionsQuery, (snapshot) => {
       setReactions(snapshot.docs.map(doc => doc.data() as Reaction));
     }, (error) => handleFirestoreError(error, OperationType.LIST, 'reactions'));

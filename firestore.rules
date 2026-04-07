@@ -146,27 +146,19 @@ service cloud.firestore {
       allow create: if isAuthenticated() && isValidPost(request.resource.data);
       allow update: if isDocOwner() && isValidPost(request.resource.data);
       allow delete: if isDocOwner();
-
-      match /reflections/{reflectionId} {
-        allow read: if true;
-        allow create: if isAuthenticated() && isValidReflection(request.resource.data);
-        allow update: if isAuthenticated() && request.auth.uid == resource.data.userId && isValidReflection(request.resource.data);
-        allow delete: if isAuthenticated() && (request.auth.uid == resource.data.userId || get(/databases/$(database)/documents/posts/$(postId)).data.userId == request.auth.uid);
-      }
-
-      match /reactions/{reactionId} {
-        allow read: if true;
-        allow create: if isAuthenticated() && isValidReaction(request.resource.data);
-        allow delete: if isAuthenticated() && request.auth.uid == resource.data.userId;
-      }
     }
 
-    match /{path=**}/reflections/{reflectionId} {
+    match /reflections/{reflectionId} {
       allow read: if true;
+      allow create: if isAuthenticated() && isValidReflection(request.resource.data);
+      allow update: if isAuthenticated() && request.auth.uid == resource.data.userId && isValidReflection(request.resource.data);
+      allow delete: if isAuthenticated() && (request.auth.uid == resource.data.userId || get(/databases/$(database)/documents/posts/$(resource.data.postId)).data.userId == request.auth.uid);
     }
 
-    match /{path=**}/reactions/{reactionId} {
+    match /reactions/{reactionId} {
       allow read: if true;
+      allow create: if isAuthenticated() && isValidReaction(request.resource.data);
+      allow delete: if isAuthenticated() && request.auth.uid == resource.data.userId;
     }
 
     match /messages/{messageId} {

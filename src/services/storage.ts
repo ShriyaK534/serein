@@ -186,36 +186,36 @@ export const storage = {
   // --- Reflection Operations ---
   saveReflection: async (reflection: Reflection) => {
     try {
-      const ref = doc(db, 'posts', reflection.postId, 'reflections', reflection.id);
+      const ref = doc(db, 'reflections', reflection.id);
       await setDoc(ref, reflection);
     } catch (e) {
-      handleFirestoreError(e, OperationType.WRITE, `posts/${reflection.postId}/reflections/${reflection.id}`);
+      handleFirestoreError(e, OperationType.WRITE, `reflections/${reflection.id}`);
     }
   },
 
   deleteReflection: async (postId: string, reflectionId: string) => {
     try {
-      await deleteDoc(doc(db, 'posts', postId, 'reflections', reflectionId));
+      await deleteDoc(doc(db, 'reflections', reflectionId));
     } catch (e) {
-      handleFirestoreError(e, OperationType.DELETE, `posts/${postId}/reflections/${reflectionId}`);
+      handleFirestoreError(e, OperationType.DELETE, `reflections/${reflectionId}`);
     }
   },
 
   // --- Reaction Operations ---
   saveReaction: async (reaction: Reaction) => {
     try {
-      const ref = doc(db, 'posts', reaction.postId, 'reactions', reaction.id);
+      const ref = doc(db, 'reactions', reaction.id);
       await setDoc(ref, reaction);
     } catch (e) {
-      handleFirestoreError(e, OperationType.WRITE, `posts/${reaction.postId}/reactions/${reaction.id}`);
+      handleFirestoreError(e, OperationType.WRITE, `reactions/${reaction.id}`);
     }
   },
 
   deleteReaction: async (postId: string, reactionId: string) => {
     try {
-      await deleteDoc(doc(db, 'posts', postId, 'reactions', reactionId));
+      await deleteDoc(doc(db, 'reactions', reactionId));
     } catch (e) {
-      handleFirestoreError(e, OperationType.DELETE, `posts/${postId}/reactions/${reactionId}`);
+      handleFirestoreError(e, OperationType.DELETE, `reactions/${reactionId}`);
     }
   },
 
