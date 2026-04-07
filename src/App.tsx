@@ -35,11 +35,17 @@ import {
   Lock,
   Eye,
   EyeOff,
-  Bell
+  Bell,
+  Camera
 } from 'lucide-react';
 import { storage } from './services/storage';
 import { Post, Reflection, Reaction, User, Category, CATEGORIES, THEMES, Draft, Message, SereinNotification } from './types';
-import { auth, db, googleProvider, handleFirestoreError, OperationType } from './firebase';
+import { 
+  ref as storageRef, 
+  uploadBytes, 
+  getDownloadURL 
+} from 'firebase/storage';
+import { auth, db, googleProvider, handleFirestoreError, OperationType, storage as firebaseStorage } from './firebase';
 import { 
   onAuthStateChanged, 
   signInWithPopup, 
@@ -353,7 +359,7 @@ const WritingMode = ({
   currentUser
 }: { 
   onClose: () => void; 
-  onPost: (content: string, category?: Category, isAnonymous?: boolean, postType?: 'poem' | 'quote' | 'thought') => void;
+  onPost: (content: string, category?: Category, isAnonymous?: boolean, postType?: 'poem' | 'quote' | 'thought') => Promise<void> | void;
   type?: 'post' | 'reflection';
   initialData?: Partial<Post>;
   currentUser?: User | null;
@@ -363,6 +369,7 @@ const WritingMode = ({
   const [isAnonymous, setIsAnonymous] = useState(initialData?.isAnonymous || false);
   const [postType, setPostType] = useState<'poem' | 'quote' | 'thought'>(initialData?.type || 'thought');
   const [showDrafts, setShowDrafts] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [drafts, setDrafts] = useState<Draft[]>([]);
 
   useEffect(() => {
@@ -379,15 +386,23 @@ const WritingMode = ({
     return () => window.removeEventListener('keydown', handleEsc);
   }, [onClose]);
 
-  const handleSubmit = () => {
-    if (!content.trim()) return;
-    onPost(content, category, isAnonymous, postType);
-    if (currentUser && !initialData) {
-      // If it was a draft, delete it after posting
-      const existingDraft = drafts.find(d => d.content === content);
-      if (existingDraft) storage.deleteDraft(existingDraft.id);
+  const handleSubmit = async () => {
+    if (!content.trim() || isSubmitting) return;
+    
+    setIsSubmitting(true);
+    try {
+      await onPost(content, category, isAnonymous, postType);
+      if (currentUser && !initialData) {
+        // If it was a draft, delete it after posting
+        const existingDraft = drafts.find(d => d.content === content);
+        if (existingDraft) storage.deleteDraft(existingDraft.id);
+      }
+      onClose();
+    } catch (err) {
+      console.error("Submission failed:", err);
+    } finally {
+      setIsSubmitting(false);
     }
-    onClose();
   };
 
   const handleSaveDraft = () => {
@@ -506,11 +521,13 @@ const WritingMode = ({
           </div>
           <button 
             onClick={handleSubmit}
-            disabled={!content.trim()}
+            disabled={!content.trim() || isSubmitting}
             className="flex items-center gap-3 bg-white/5 hover:bg-white/10 px-8 py-4 rounded-full transition-all disabled:opacity-30 group"
           >
-            <span className="uppercase tracking-[0.2em] text-sm">{initialData ? 'Update' : 'Release'}</span>
-            <Send size={18} className="group-hover:translate-x-1 transition-transform" />
+            <span className="uppercase tracking-[0.2em] text-sm">
+              {isSubmitting ? 'Releasing...' : (initialData ? 'Update' : 'Release')}
+            </span>
+            <Send size={18} className={`group-hover:translate-x-1 transition-transform ${isSubmitting ? 'animate-pulse' : ''}`} />
           </button>
         </div>
 
@@ -573,7 +590,9 @@ const ProfileView = ({
   const [avatarUrl, setAvatarUrl] = useState('');
   const [isFollowing, setIsFollowing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     let unsubscribe: (() => void) | undefined;
@@ -649,6 +668,36 @@ const ProfileView = ({
     }
   };
 
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !profileUser) return;
+
+    // Validate file type and size
+    if (!file.type.startsWith('image/')) {
+      setError("Only images can represent a soul.");
+      return;
+    }
+    if (file.size > 2 * 1024 * 1024) {
+      setError("This image is too heavy for the sanctuary (max 2MB).");
+      return;
+    }
+
+    setIsUploading(true);
+    setError(null);
+
+    try {
+      const fileRef = storageRef(firebaseStorage, `avatars/${profileUser.id}/${Date.now()}_${file.name}`);
+      const uploadResult = await uploadBytes(fileRef, file);
+      const url = await getDownloadURL(uploadResult.ref);
+      setAvatarUrl(url);
+    } catch (err) {
+      console.error("Upload failed:", err);
+      setError("The void rejected your image.");
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
   useEffect(() => {
     const handleEsc = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
@@ -719,20 +768,50 @@ const ProfileView = ({
           </div>
           
           {isEditingProfile ? (
-            <div className="space-y-4">
+            <div className="space-y-6">
               {error && <p className="text-red-400 text-[10px] uppercase tracking-widest">{error}</p>}
-              <div>
-                <label className="block text-[10px] uppercase tracking-widest text-white/30 mb-2">Username</label>
-                <input 
-                  type="text" 
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
-                  className="w-full bg-white/5 border border-white/10 rounded-lg p-3 text-sm focus:outline-none focus:border-white/30"
-                  placeholder="Your sanctuary name..."
-                />
+              
+              <div className="flex flex-col items-center gap-4">
+                <div className="relative group">
+                  <div className="w-24 h-24 rounded-full bg-white/5 border border-white/10 overflow-hidden">
+                    {avatarUrl ? (
+                      <img src={avatarUrl} alt="" className="w-full h-full object-cover" />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center text-white/20">
+                        <UserIcon size={40} />
+                      </div>
+                    )}
+                  </div>
+                  <button 
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={isUploading}
+                    type="button"
+                    className="absolute inset-0 flex items-center justify-center bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity rounded-full"
+                  >
+                    <Camera size={20} className={isUploading ? 'animate-pulse' : ''} />
+                  </button>
+                  <input 
+                    type="file" 
+                    ref={fileInputRef} 
+                    onChange={handleFileChange} 
+                    className="hidden" 
+                    accept="image/*"
+                  />
+                </div>
+                <div className="w-full">
+                  <label className="block text-[10px] uppercase tracking-widest text-white/30 mb-2">Username</label>
+                  <input 
+                    type="text" 
+                    value={username}
+                    onChange={(e) => setUsername(e.target.value)}
+                    className="w-full bg-white/5 border border-white/10 rounded-lg p-3 text-sm focus:outline-none focus:border-white/30"
+                    placeholder="Your sanctuary name..."
+                  />
+                </div>
               </div>
+
               <div>
-                <label className="block text-[10px] uppercase tracking-widest text-white/30 mb-2">Avatar URL</label>
+                <label className="block text-[10px] uppercase tracking-widest text-white/30 mb-2">Avatar URL (Optional)</label>
                 <input 
                   type="text" 
                   value={avatarUrl}
@@ -908,6 +987,71 @@ const SanctuaryInsights = ({
           )}
         </AnimatePresence>
       </div>
+    </div>
+  );
+};
+
+const ReflectionItem: React.FC<{ 
+  reflection: Reflection; 
+  allReflections: Reflection[]; 
+  onReply: (ref: Reflection) => void;
+  onDelete: (refId: string) => void;
+  currentUser: User | null;
+}> = ({ 
+  reflection, 
+  allReflections, 
+  onReply, 
+  onDelete, 
+  currentUser 
+}) => {
+  const replies = allReflections.filter(r => r.parentId === reflection.id);
+  
+  return (
+    <div className="bg-white/[0.01] border border-white/5 p-4 rounded-2xl space-y-3">
+      <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center gap-2 text-[7px] uppercase tracking-widest text-white/30">
+          <div className="w-4 h-4 rounded-full bg-white/5 border border-white/5 overflow-hidden">
+            {reflection.avatarUrl ? (
+              <img src={reflection.avatarUrl} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+            ) : (
+              <UserIcon size={6} />
+            )}
+          </div>
+          <span>{reflection.username}</span>
+        </div>
+        <div className="flex items-center gap-3">
+          <button 
+            onClick={() => onReply(reflection)}
+            className="text-[7px] uppercase tracking-widest text-white/20 hover:text-white transition-all"
+          >
+            Echo
+          </button>
+          {currentUser?.id === reflection.userId && (
+            <button 
+              onClick={() => onDelete(reflection.id)}
+              className="text-[7px] uppercase tracking-widest text-red-400/40 hover:text-red-400 transition-all"
+            >
+              Release
+            </button>
+          )}
+        </div>
+      </div>
+      <p className="text-xs font-serif italic text-white/50 leading-relaxed">"{reflection.content}"</p>
+      
+      {replies.length > 0 && (
+        <div className="pl-4 border-l border-white/5 space-y-3 mt-3">
+          {replies.map(reply => (
+            <ReflectionItem 
+              key={reply.id} 
+              reflection={reply} 
+              allReflections={allReflections} 
+              onReply={onReply} 
+              onDelete={(id) => onDelete(id)}
+              currentUser={currentUser}
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 };
@@ -1197,7 +1341,12 @@ export default function App() {
   };
 
   const handlePost = async (content: string, category?: Category, isAnonymous?: boolean, postType?: 'poem' | 'quote' | 'thought') => {
-    if (!user) return;
+    if (!user) {
+      console.error("Attempted to post without user session");
+      return;
+    }
+
+    console.log("handlePost called with:", { content, category, isAnonymous, postType });
 
     try {
       if (isEditingPost && selectedPost) {
@@ -1255,8 +1404,19 @@ export default function App() {
   };
 
   const handleReflection = async (content: string) => {
-    if (!user || !selectedPost) return;
+    if (!user) {
+      console.error("Attempted to reflect without user session");
+      return;
+    }
+    if (!selectedPost) {
+      console.error("Attempted to reflect without selected post");
+      return;
+    }
+    
+    console.log("handleReflection called for post:", selectedPost.id, "with content:", content);
+
     try {
+      console.log("Saving reflection for post:", selectedPost.id);
       const newReflection: Reflection = {
         id: Math.random().toString(36).substr(2, 9),
         postId: selectedPost.id,
@@ -1776,33 +1936,14 @@ export default function App() {
                                       <div className="pt-6 space-y-4">
                                         <div className="space-y-3">
                                           {reflections.filter(r => r.postId === post.id && !r.parentId).map((ref) => (
-                                            <div key={ref.id} className="bg-white/[0.01] border border-white/5 p-4 rounded-2xl">
-                                              <div className="flex items-center justify-between mb-2">
-                                                <div className="flex items-center gap-2 text-[7px] uppercase tracking-widest text-white/30">
-                                                  <div className="w-4 h-4 rounded-full bg-white/5 border border-white/5 overflow-hidden">
-                                                    {ref.avatarUrl ? <img src={ref.avatarUrl} alt="" className="w-full h-full object-cover" /> : <UserIcon size={6} />}
-                                                  </div>
-                                                  <span>{ref.username}</span>
-                                                </div>
-                                                <div className="flex items-center gap-3">
-                                                  <button 
-                                                    onClick={() => { setSelectedPost(post); setWritingType('reflection'); setReplyToId(ref.id); setIsWriting(true); }}
-                                                    className="text-[7px] uppercase tracking-widest text-white/20 hover:text-white transition-all"
-                                                  >
-                                                    Echo
-                                                  </button>
-                                                  {user?.id === ref.userId && (
-                                                    <button 
-                                                      onClick={() => handleDeleteReflection(post.id, ref.id)}
-                                                      className="text-[7px] uppercase tracking-widest text-red-400/40 hover:text-red-400 transition-all"
-                                                    >
-                                                      Release
-                                                    </button>
-                                                  )}
-                                                </div>
-                                              </div>
-                                              <p className="text-xs font-serif italic text-white/50">"{ref.content}"</p>
-                                            </div>
+                                            <ReflectionItem 
+                                              key={ref.id}
+                                              reflection={ref}
+                                              allReflections={reflections}
+                                              onReply={(r) => { setSelectedPost(post); setWritingType('reflection'); setReplyToId(r.id); setIsWriting(true); }}
+                                              onDelete={(id) => handleDeleteReflection(post.id, id)}
+                                              currentUser={user}
+                                            />
                                           ))}
                                         </div>
                                         <button 
