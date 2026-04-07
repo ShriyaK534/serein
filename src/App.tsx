@@ -1266,7 +1266,9 @@ export default function App() {
 
     const reflectionsQuery = collectionGroup(db, 'reflections');
     const unsubscribeReflections = onSnapshot(reflectionsQuery, (snapshot) => {
-      setReflections(snapshot.docs.map(doc => doc.data() as Reflection));
+      const r = snapshot.docs.map(doc => doc.data() as Reflection);
+      // Sort reflections by date
+      setReflections(r.sort((a, b) => a.createdAt - b.createdAt));
     }, (error) => handleFirestoreError(error, OperationType.LIST, 'reflections'));
 
     const reactionsQuery = collectionGroup(db, 'reactions');
@@ -1425,9 +1427,13 @@ export default function App() {
         avatarUrl: user.avatarUrl,
         content,
         createdAt: Date.now(),
-        parentId: replyToId || undefined
+        parentId: replyToId && replyToId.trim() !== '' ? replyToId : undefined
       };
+      console.log("Constructed reflection object:", newReflection);
       await storage.saveReflection(newReflection);
+      
+      // Ensure the reflections list is open for this post so the user sees their response
+      setOpenReflectionPostId(selectedPost.id);
       
       // Add notification for post owner
       if (selectedPost.userId !== user.id) {
@@ -1445,8 +1451,11 @@ export default function App() {
       }
       setReplyToId(null);
       setIsWriting(false);
+      console.log("Reflection saved successfully");
     } catch (err) {
       console.error("Failed to reflect:", err);
+      // Re-throw or handle so WritingMode knows it failed
+      throw err;
     }
   };
 
