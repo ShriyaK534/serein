@@ -1238,7 +1238,16 @@ export default function App() {
       title: 'Release Thought',
       message: 'Are you sure you want to release this thought back to the silence? It will be lost to the void.',
       onConfirm: async () => {
-        await storage.deletePost(selectedPost.id);
+        // Cleanup reflections and reactions first
+        const postReflections = reflections.filter(r => r.postId === selectedPost.id);
+        const postReactions = reactions.filter(r => r.postId === selectedPost.id);
+        
+        await Promise.all([
+          ...postReflections.map(r => storage.deleteReflection(selectedPost.id, r.id)),
+          ...postReactions.map(r => storage.deleteReaction(selectedPost.id, r.id)),
+          storage.deletePost(selectedPost.id)
+        ]);
+        
         setSelectedPost(posts.length > 1 ? (posts[0].id === selectedPost.id ? posts[1] : posts[0]) : null);
         setConfirmModal(prev => ({ ...prev, isOpen: false }));
       }
@@ -1288,7 +1297,12 @@ export default function App() {
       title: 'Release Reflection',
       message: 'Are you sure you want to release this reflection? It will be lost to the void.',
       onConfirm: async () => {
-        await storage.deleteReflection(postId, reflectionId);
+        // Also delete any replies to this reflection
+        const replies = reflections.filter(r => r.parentId === reflectionId);
+        await Promise.all([
+          storage.deleteReflection(postId, reflectionId),
+          ...replies.map(r => storage.deleteReflection(postId, r.id))
+        ]);
         setConfirmModal(prev => ({ ...prev, isOpen: false }));
       }
     });
@@ -1384,7 +1398,7 @@ export default function App() {
 
   return (
     <ErrorBoundary>
-    <div className={`h-screen overflow-hidden ${currentTheme.bg} text-white font-sans selection:bg-white/10`}>
+    <div className={`min-h-screen ${currentTheme.bg} text-white font-sans selection:bg-white/10 relative`}>
       <div className="sanctuary-bg" />
       {!user && isAuthReady && <AuthModal onLogin={setUser} />}
     
@@ -1522,8 +1536,8 @@ export default function App() {
       )}
 
       {/* Main Sanctuary Content */}
-      <main className={`min-h-screen relative ${isZenMode ? 'bg-[#030303]' : ''}`}>
-        <div className="max-w-7xl mx-auto flex relative px-6">
+      <main className={`min-h-screen w-full relative ${isZenMode ? 'bg-[#030303]' : ''}`}>
+        <div className="max-w-7xl mx-auto flex relative px-6 min-h-screen">
           
           {/* Left Panel: Identity */}
           {!isZenMode && (
