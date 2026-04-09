@@ -2064,7 +2064,7 @@ export default function App() {
                           <button
                             key={partnerId}
                             onClick={() => setActiveChatUserId(partnerId)}
-                            className={`w-full p-4 rounded-2xl border transition-all text-left flex items-center gap-4 ${activeChatUserId === partnerId ? 'bg-white/10 border-white/20' : 'bg-white/5 border-white/5 hover:bg-white/10'}`}
+                            className={`w-full p-5 rounded-2xl border transition-all text-left flex items-center gap-5 ${activeChatUserId === partnerId ? 'bg-white/10 border-white/20' : 'bg-white/5 border-white/5 hover:bg-white/10'}`}
                           >
                             <div className="w-10 h-10 rounded-full bg-white/5 border border-white/10 overflow-hidden flex items-center justify-center shrink-0">
                               {partner?.avatarUrl ? <img src={partner.avatarUrl} alt="" className="w-full h-full object-cover" /> : <UserIcon size={16} className="text-white/40" />}
@@ -2096,8 +2096,8 @@ export default function App() {
                   <div className={`flex-1 bg-white/[0.02] border border-white/5 rounded-3xl flex flex-col overflow-hidden ${activeChatUserId ? 'block' : 'hidden md:flex'}`}>
                     {activeChatUserId ? (
                       <>
-                        <div className="p-4 bg-white/[0.03] border-b border-white/5 flex items-center justify-between">
-                          <div className="flex items-center gap-3">
+                        <div className="p-5 bg-white/[0.03] border-b border-white/5 flex items-center justify-between">
+                          <div className="flex items-center gap-4">
                             <button onClick={() => setActiveChatUserId(null)} className="md:hidden text-white/40 hover:text-white p-1">
                               <ArrowLeft size={16} />
                             </button>
@@ -2131,7 +2131,7 @@ export default function App() {
                             .map(m => (
                               <div key={m.id} className={`flex ${m.senderId === user?.id ? 'justify-end' : 'justify-start'}`}>
                                 <div className={`max-w-[85%] md:max-w-[75%] space-y-1`}>
-                                  <div className={`p-4 rounded-[1.5rem] text-sm leading-relaxed ${m.senderId === user?.id ? 'bg-white/10 text-white/90 rounded-tr-none' : 'bg-white/5 text-white/70 rounded-tl-none'}`}>
+                                  <div className={`p-5 rounded-[1.8rem] text-sm leading-relaxed ${m.senderId === user?.id ? 'bg-white/10 text-white/90 rounded-tr-none' : 'bg-white/5 text-white/70 rounded-tl-none'}`}>
                                     {m.content}
                                   </div>
                                   <div className={`text-[8px] opacity-20 px-2 ${m.senderId === user?.id ? 'text-right' : 'text-left'}`}>
@@ -2142,8 +2142,8 @@ export default function App() {
                             ))}
                           <div ref={chatEndRef} />
                         </div>
-                        <div className="p-4 bg-black/20 border-t border-white/5">
-                          <div className="flex gap-3 bg-white/5 border border-white/10 rounded-2xl p-2 focus-within:border-white/20 transition-all">
+                        <div className="p-5 bg-black/20 border-t border-white/5">
+                          <div className="flex gap-4 bg-white/5 border border-white/10 rounded-2xl p-3 focus-within:border-white/20 transition-all">
                             <input 
                               type="text" 
                               value={messageText}
