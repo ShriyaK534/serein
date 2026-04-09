@@ -1119,12 +1119,6 @@ export default function App() {
     return result;
   }, [filteredPosts, searchQuery]);
 
-  const searchedUsers = useMemo(() => {
-    if (!searchQuery.trim()) return [];
-    const q = searchQuery.toLowerCase();
-    return allUsers.filter(u => u.username.toLowerCase().includes(q));
-  }, [allUsers, searchQuery]);
-
   const suggestedSouls = useMemo(() => {
     if (!user) return allUsers.slice(0, 3);
     return allUsers
@@ -1848,7 +1842,7 @@ export default function App() {
           )}
 
           {/* Main Feed */}
-          <section className={`flex-1 pt-32 pb-40 px-6 transition-all duration-700 ${isZenMode ? 'max-w-4xl mx-auto' : activeTab === 'messages' ? 'lg:ml-72 xl:mr-12' : 'lg:ml-72 xl:mr-8'}`}>
+          <section className={`flex-1 pt-32 pb-40 px-6 transition-all duration-700 ${isZenMode ? 'max-w-4xl mx-auto' : 'lg:ml-72 xl:mr-96'}`}>
           {/* Ripple Overlay */}
           {ripple && (
             <div 
@@ -1880,29 +1874,6 @@ export default function App() {
                       {new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric' })}
                     </div>
                   </div>
-
-                  {searchQuery && searchedUsers.length > 0 && (
-                    <div className="space-y-6 mb-12">
-                      <h3 className="text-[10px] uppercase tracking-[0.4em] text-white/20 border-b border-white/5 pb-4">Souls Found</h3>
-                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                        {searchedUsers.map(soul => (
-                          <button 
-                            key={soul.id}
-                            onClick={() => setViewedProfileId(soul.id)}
-                            className="bg-white/[0.03] border border-white/10 p-4 rounded-2xl flex items-center gap-4 hover:bg-white/10 transition-all group text-left"
-                          >
-                            <div className="w-10 h-10 rounded-full bg-white/5 border border-white/10 overflow-hidden shrink-0">
-                              {soul.avatarUrl ? <img src={soul.avatarUrl} alt="" className="w-full h-full object-cover" /> : <UserIcon size={16} className="m-3 text-white/10" />}
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <div className="text-sm font-serif text-white/90 truncate">{soul.username}</div>
-                              <div className="text-[8px] uppercase tracking-widest text-white/20">Sanctuary Member</div>
-                            </div>
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  )}
 
                   {searchedPosts.length > 0 ? (
                     <div className="space-y-8">
