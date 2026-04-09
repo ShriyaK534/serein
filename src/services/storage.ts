@@ -244,21 +244,20 @@ export const storage = {
 
   clearConversation: async (userId: string, partnerId: string) => {
     try {
-      const q = query(
+      // Split into two queries to avoid potential 'or' index requirements
+      const q1 = query(
         collection(db, 'messages'),
-        or(
-          where('senderId', '==', userId),
-          where('receiverId', '==', userId)
-        )
+        where('senderId', '==', userId),
+        where('receiverId', '==', partnerId)
       );
-      const snapshot = await getDocs(q);
-      const batch = snapshot.docs
-        .filter(d => {
-          const m = d.data();
-          return (m.senderId === partnerId && m.receiverId === userId) || 
-                 (m.senderId === userId && m.receiverId === partnerId);
-        })
-        .map(d => deleteDoc(doc(db, 'messages', d.id)));
+      const q2 = query(
+        collection(db, 'messages'),
+        where('senderId', '==', partnerId),
+        where('receiverId', '==', userId)
+      );
+      
+      const [snap1, snap2] = await Promise.all([getDocs(q1), getDocs(q2)]);
+      const batch = [...snap1.docs, ...snap2.docs].map(d => deleteDoc(doc(db, 'messages', d.id)));
       await Promise.all(batch);
     } catch (e) {
       handleFirestoreError(e, OperationType.DELETE, `messages/clear/${partnerId}`);

@@ -1728,11 +1728,11 @@ export default function App() {
 
       {/* Main Sanctuary Content */}
       <main className={`min-h-screen w-full relative ${isZenMode ? 'bg-[#030303]' : ''}`}>
-        <div className="max-w-7xl mx-auto flex relative px-6 min-h-screen">
+        <div className="max-w-[1600px] mx-auto flex relative px-6 min-h-screen">
           
           {/* Left Panel: Identity */}
           {!isZenMode && (
-            <aside className="hidden lg:flex flex-col fixed left-[calc(50%-40rem)] top-0 w-64 h-screen pt-32 space-y-6 overflow-y-auto scrollbar-hide shrink-0 pb-24 px-6">
+            <aside className="hidden lg:flex flex-col fixed left-8 top-0 w-64 h-screen pt-32 space-y-6 overflow-y-auto scrollbar-hide shrink-0 pb-24 px-6">
               <div className="bg-white/[0.03] backdrop-blur-md border border-white/10 rounded-3xl p-6 space-y-6">
                 <div className="flex flex-col items-center text-center space-y-4">
                   <div className="w-20 h-20 rounded-full bg-white/5 border border-white/10 overflow-hidden relative group">
@@ -1832,7 +1832,7 @@ export default function App() {
           )}
 
           {/* Main Feed */}
-          <section className={`flex-1 pt-32 pb-40 px-6 transition-all duration-700 ${isZenMode ? 'max-w-4xl mx-auto' : 'lg:ml-64 xl:mr-80'}`}>
+          <section className={`flex-1 pt-32 pb-40 px-6 transition-all duration-700 ${isZenMode ? 'max-w-4xl mx-auto' : 'lg:ml-72 xl:mr-96'}`}>
           {/* Ripple Overlay */}
           {ripple && (
             <div 
@@ -1897,7 +1897,7 @@ export default function App() {
                                           <UserIcon size={8} className="text-white/20" />
                                         )}
                                       </div>
-                                      <span className="text-[8px]">{post.isAnonymous ? 'Shadow' : post.username}</span>
+                                      <span className="text-[10px] tracking-wider">{post.isAnonymous ? 'Shadow' : post.username}</span>
                                     </button>
 
                                     {user?.id === post.userId && (
@@ -2050,9 +2050,9 @@ export default function App() {
                   <h2 className="text-3xl font-serif italic text-white/80">Sanctuary Whispers</h2>
                   <p className="text-xs uppercase tracking-[0.3em] text-white/20">Private echoes between souls</p>
                 </div>
-                <div className="flex flex-col md:flex-row gap-6 h-[600px]">
+                <div className="flex flex-col md:flex-row gap-6 h-[700px]">
                   {/* Chat List */}
-                  <div className={`w-full md:w-1/3 space-y-2 overflow-y-auto pr-2 scrollbar-hide border-r border-white/5 ${activeChatUserId ? 'hidden md:block' : 'block'}`}>
+                  <div className={`w-full md:w-[400px] space-y-2 overflow-y-auto pr-2 scrollbar-hide border-r border-white/5 ${activeChatUserId ? 'hidden md:block' : 'block'}`}>
                     {getChatPartners().length > 0 ? (
                       getChatPartners().map(partnerId => {
                         const partner = allUsers.find(u => u.id === partnerId);
@@ -2064,21 +2064,21 @@ export default function App() {
                           <button
                             key={partnerId}
                             onClick={() => setActiveChatUserId(partnerId)}
-                            className={`w-full p-5 rounded-2xl border transition-all text-left flex items-center gap-5 ${activeChatUserId === partnerId ? 'bg-white/10 border-white/20' : 'bg-white/5 border-white/5 hover:bg-white/10'}`}
+                            className={`w-full p-6 rounded-2xl border transition-all text-left flex items-center gap-6 ${activeChatUserId === partnerId ? 'bg-white/10 border-white/20' : 'bg-white/5 border-white/5 hover:bg-white/10'}`}
                           >
-                            <div className="w-10 h-10 rounded-full bg-white/5 border border-white/10 overflow-hidden flex items-center justify-center shrink-0">
-                              {partner?.avatarUrl ? <img src={partner.avatarUrl} alt="" className="w-full h-full object-cover" /> : <UserIcon size={16} className="text-white/40" />}
+                            <div className="w-12 h-12 rounded-full bg-white/5 border border-white/10 overflow-hidden flex items-center justify-center shrink-0">
+                              {partner?.avatarUrl ? <img src={partner.avatarUrl} alt="" className="w-full h-full object-cover" /> : <UserIcon size={20} className="text-white/40" />}
                             </div>
-                            <div className="flex-1 overflow-hidden">
-                              <div className="flex justify-between items-center mb-1">
-                                <div className="text-xs font-medium text-white/80 truncate">{partner?.username || `Soul`}</div>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex justify-between items-start mb-2 gap-2">
+                                <div className="text-sm font-medium text-white/90 truncate pr-2">{partner?.username || `Soul`}</div>
                                 {lastMsg && (
-                                  <div className="text-[8px] text-white/20">
+                                  <div className="text-[9px] text-white/20 whitespace-nowrap shrink-0 pt-0.5">
                                     {new Date(lastMsg.createdAt).toLocaleDateString([], { month: 'short', day: 'numeric' })}
                                   </div>
                                 )}
                               </div>
-                              <div className="text-[10px] text-white/40 truncate">
+                              <div className="text-xs text-white/40 truncate">
                                 {lastMsg?.content || "..."}
                               </div>
                             </div>
