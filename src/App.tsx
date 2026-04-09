@@ -1264,10 +1264,14 @@ export default function App() {
 
     const reflectionsQuery = collection(db, 'reflections');
     const unsubscribeReflections = onSnapshot(reflectionsQuery, (snapshot) => {
+      console.log("Reflections snapshot received, count:", snapshot.size);
       const r = snapshot.docs.map(doc => doc.data() as Reflection);
       // Sort reflections by date
       setReflections(r.sort((a, b) => a.createdAt - b.createdAt));
-    }, (error) => handleFirestoreError(error, OperationType.LIST, 'reflections'));
+    }, (error) => {
+      console.error("Reflections snapshot error:", error);
+      handleFirestoreError(error, OperationType.LIST, 'reflections');
+    });
 
     const reactionsQuery = collection(db, 'reactions');
     const unsubscribeReactions = onSnapshot(reactionsQuery, (snapshot) => {
