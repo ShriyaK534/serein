@@ -490,7 +490,7 @@ const WritingMode = ({
           value={content}
           onChange={(e) => setContent(e.target.value)}
           placeholder={type === 'post' ? "Let the words fall like rain..." : "Reflect on this..."}
-          className="w-full h-[40vh] bg-transparent text-2xl font-serif resize-none focus:outline-none leading-relaxed placeholder:text-white/10"
+          className="w-full h-[40vh] bg-transparent text-xl md:text-2xl lg:text-3xl font-serif resize-none focus:outline-none leading-relaxed placeholder:text-white/10"
           autoFocus
         />
 
@@ -1347,7 +1347,6 @@ export default function App() {
   const handlePost = async (content: string, category?: Category, isAnonymous?: boolean, postType?: 'poem' | 'quote' | 'thought') => {
     if (!user) {
       console.error("Attempted to post without user session");
-      setAuthModal(true);
       return;
     }
 
@@ -1372,7 +1371,7 @@ export default function App() {
           id: Math.random().toString(36).substr(2, 9),
           userId: user.id,
           username: user.username,
-          avatarUrl: user.avatarUrl,
+          avatarUrl: user.avatarUrl || null,
           isAnonymous: !!isAnonymous,
           content,
           category: category || 'Philosophical',
@@ -1413,15 +1412,14 @@ export default function App() {
     });
   };
 
-  const handleReflection = async (content: string) => {
+  const handleReflection = async (content: string, _category?: string, _isAnonymous?: boolean) => {
     if (!user) {
       console.error("Attempted to reflect without user session");
-      setAuthModal(true);
       return;
     }
     if (!selectedPost) {
       console.error("Attempted to reflect without selected post");
-      return;
+      throw new Error("No post selected for reflection");
     }
     
     console.log("handleReflection called for post:", selectedPost.id, "with content:", content);
@@ -1433,16 +1431,17 @@ export default function App() {
         postId: selectedPost.id,
         userId: user.id,
         username: user.username,
-        avatarUrl: user.avatarUrl,
+        avatarUrl: user.avatarUrl || null,
         content,
         createdAt: Date.now(),
-        parentId: (replyToId && typeof replyToId === 'string' && replyToId.trim() !== '') ? replyToId : undefined
+        ...(replyToId && typeof replyToId === 'string' && replyToId.trim() !== '' ? { parentId: replyToId } : {})
       };
       console.log("Constructed reflection object:", newReflection);
       await storage.saveReflection(newReflection);
       
       // Ensure the reflections list is open for this post so the user sees their response
       setOpenReflectionPostId(selectedPost.id);
+      setReplyToId(null);
       
       // Add notification for post owner (don't let this block the UI if it fails)
       if (selectedPost.userId !== user.id) {
@@ -1497,16 +1496,27 @@ export default function App() {
     setRipple({ x: e.clientX, y: e.clientY });
     setTimeout(() => setRipple(null), 1000);
 
-    // Check if user already reacted with this type
-    const userReactionsOfType = reactions.filter(r => 
+    // Check if user already has ANY reaction on this post
+    const existingReaction = reactions.find(r => 
       r.postId === postId && 
-      r.userId === user.id && 
-      r.type === type
+      r.userId === user.id
     );
 
-    if (userReactionsOfType.length > 0) {
-      // Remove all reactions of this type (toggle off)
-      await Promise.all(userReactionsOfType.map(r => storage.deleteReaction(postId, r.id)));
+    if (existingReaction) {
+      if (existingReaction.type === type) {
+        // Toggle off if same type
+        await storage.deleteReaction(postId, existingReaction.id);
+      } else {
+        // Switch type if different
+        await storage.deleteReaction(postId, existingReaction.id);
+        const reaction: Reaction = {
+          id: Math.random().toString(36).substr(2, 9),
+          postId: postId,
+          userId: user.id,
+          type
+        };
+        await storage.saveReaction(reaction);
+      }
       return;
     }
 
@@ -1805,14 +1815,14 @@ export default function App() {
                 </button>
                 <button 
                   onClick={() => setActiveTab('analytics')}
-                  className={`w-full flex items-center gap-4 px-4 py-3 rounded-2xl transition-all ${activeTab === 'analytics' ? 'text-white' : 'text-white/30 hover:text-white/50'}`}
+                  className={`w-full flex items-center gap-4 px-4 py-3 rounded-2xl transition-all ${activeTab === 'analytics' ? 'bg-white/10 text-white' : 'text-white/30 hover:text-white/50'}`}
                 >
-                  <BarChart3 size={18} />
-                  <span className="text-[10px] uppercase tracking-widest font-medium">Resonance</span>
+                  <MessageSquare size={18} />
+                  <span className="text-[10px] uppercase tracking-widest font-medium">Reflections</span>
                 </button>
                 <button 
                   onClick={() => setActiveTab('settings')}
-                  className={`w-full flex items-center gap-4 px-4 py-3 rounded-2xl transition-all ${activeTab === 'settings' ? 'text-white' : 'text-white/30 hover:text-white/50'}`}
+                  className={`w-full flex items-center gap-4 px-4 py-3 rounded-2xl transition-all ${activeTab === 'settings' ? 'bg-white/10 text-white' : 'text-white/30 hover:text-white/50'}`}
                 >
                   <Settings size={18} />
                   <span className="text-[10px] uppercase tracking-widest font-medium">Settings</span>
@@ -1900,7 +1910,7 @@ export default function App() {
                                 </div>
 
                                 <div 
-                                  className={`poetry-content text-base md:text-lg leading-relaxed italic font-serif text-white/80 cursor-pointer transition-all duration-500 ${expandedPostId === post.id ? '' : 'line-clamp-2'}`}
+                                  className={`poetry-content text-lg md:text-xl lg:text-2xl leading-relaxed italic font-serif text-white/80 cursor-pointer transition-all duration-500 ${expandedPostId === post.id ? '' : 'line-clamp-2'}`}
                                   onClick={() => setExpandedPostId(expandedPostId === post.id ? null : post.id)}
                                 >
                                   {post.type === 'quote' && <Quote className="mb-4 opacity-5" size={20} />}
@@ -2374,7 +2384,7 @@ export default function App() {
                 className="pt-12 space-y-12"
               >
                 <div className="space-y-4">
-                  <h2 className="text-3xl font-serif italic text-white/80">Resonance Analytics</h2>
+                  <h2 className="text-3xl font-serif italic text-white/80">Reflections</h2>
                   <p className="text-xs uppercase tracking-[0.3em] text-white/20">How your thoughts echo in the sanctuary</p>
                 </div>
 
@@ -2393,7 +2403,7 @@ export default function App() {
 
                 <div className="space-y-6">
                   <h3 className="text-xs uppercase tracking-[0.4em] text-white/30 border-b border-white/5 pb-4">Recent Echoes on Your Posts</h3>
-                  <div className="space-y-4">
+                  <div className="space-y-4 pb-24">
                     {reflections.filter(r => posts.find(p => p.id === r.postId)?.userId === user?.id).length > 0 ? (
                       reflections
                         .filter(r => posts.find(p => p.id === r.postId)?.userId === user?.id)
