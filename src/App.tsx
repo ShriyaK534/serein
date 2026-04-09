@@ -1335,18 +1335,24 @@ export default function App() {
 
   const getChatPartners = () => {
     if (!user) return [];
-    const partners = new Map<string, Message>();
+    const partners = new Map<string, number>();
+    
+    // Add from messages
     messages.forEach(m => {
       const partnerId = m.senderId === user.id ? m.receiverId : m.senderId;
       const existing = partners.get(partnerId);
-      if (!existing || m.createdAt > existing.createdAt) {
-        partners.set(partnerId, m);
+      if (!existing || m.createdAt > existing) {
+        partners.set(partnerId, m.createdAt);
       }
     });
+
+    // Ensure activeChatUserId is included even if no messages yet
+    if (activeChatUserId && !partners.has(activeChatUserId)) {
+      partners.set(activeChatUserId, Date.now());
+    }
+
     return Array.from(partners.keys()).sort((a, b) => {
-      const msgA = partners.get(a)!;
-      const msgB = partners.get(b)!;
-      return msgB.createdAt - msgA.createdAt;
+      return (partners.get(b) || 0) - (partners.get(a) || 0);
     });
   };
 
@@ -2322,7 +2328,7 @@ export default function App() {
                   <h2 className="text-3xl font-serif italic text-white/80">Sanctuary Whispers</h2>
                   <p className="text-xs uppercase tracking-[0.3em] text-white/20">Private echoes between souls</p>
                 </div>
-                <div className="flex flex-col md:flex-row gap-4 md:gap-6 h-[650px] w-full overflow-hidden">
+                <div className="flex flex-col md:flex-row gap-4 md:gap-6 h-[500px] w-full overflow-hidden">
                   {/* Chat List */}
                   <div className={`w-full md:transition-all md:duration-500 ${activeChatUserId ? 'md:w-[80px]' : 'md:w-[320px]'} space-y-3 overflow-y-auto pr-2 scrollbar-hide border-r border-white/5 ${activeChatUserId ? 'hidden md:block' : 'block'}`}>
                     {getChatPartners().length > 0 ? (
@@ -2336,11 +2342,11 @@ export default function App() {
                           <button
                             key={partnerId}
                             onClick={() => setActiveChatUserId(partnerId)}
-                            className={`w-full p-5 md:p-7 rounded-3xl border transition-all text-left flex items-center gap-5 md:gap-7 ${activeChatUserId === partnerId ? 'bg-white/10 border-white/20 shadow-xl' : 'bg-white/5 border-white/5 hover:bg-white/10'} ${activeChatUserId && activeChatUserId !== partnerId ? 'md:opacity-40 hover:opacity-100' : ''}`}
+                            className={`w-full ${activeChatUserId ? 'p-2 md:p-3 rounded-2xl' : 'p-5 md:p-7 rounded-3xl'} border transition-all text-left flex items-center gap-5 md:gap-7 ${activeChatUserId === partnerId ? 'bg-white/10 border-white/20 shadow-xl' : 'bg-white/5 border-white/5 hover:bg-white/10'} ${activeChatUserId && activeChatUserId !== partnerId ? 'md:opacity-40 hover:opacity-100' : ''}`}
                             title={partner?.username}
                           >
-                            <div className="w-14 h-14 rounded-full bg-white/5 border border-white/10 overflow-hidden flex items-center justify-center shrink-0 shadow-inner">
-                              {partner?.avatarUrl ? <img src={partner.avatarUrl} alt="" className="w-full h-full object-cover" /> : <UserIcon size={24} className="text-white/40" />}
+                            <div className={`${activeChatUserId ? 'w-10 h-10' : 'w-14 h-14'} rounded-full bg-white/5 border border-white/10 overflow-hidden flex items-center justify-center shrink-0 shadow-inner`}>
+                              {partner?.avatarUrl ? <img src={partner.avatarUrl} alt="" className="w-full h-full object-cover" /> : <UserIcon size={activeChatUserId ? 16 : 24} className="text-white/40" />}
                             </div>
                             <div className={`flex-1 min-w-0 ${activeChatUserId ? 'md:hidden' : 'block'}`}>
                               <div className="flex justify-between items-start mb-2.5 gap-3">
