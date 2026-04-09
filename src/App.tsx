@@ -565,21 +565,56 @@ const WritingMode = ({
   );
 };
 
+interface SoulListItemProps {
+  userId: string;
+  onSelect: () => void;
+  setViewedProfileId: (id: string | null) => void;
+  allUsers: User[];
+}
+
+const SoulListItem: React.FC<SoulListItemProps> = ({ userId, onSelect, setViewedProfileId, allUsers }) => {
+  const user = allUsers.find(u => u.id === userId);
+
+  if (!user) return null;
+
+  return (
+    <button 
+      onClick={() => { setViewedProfileId(userId); onSelect(); }}
+      className="w-full flex items-center gap-4 p-4 bg-white/[0.03] border border-white/5 rounded-2xl hover:bg-white/10 transition-all text-left group"
+    >
+      <div className="w-10 h-10 rounded-full bg-white/5 border border-white/10 overflow-hidden shrink-0">
+        {user.avatarUrl ? <img src={user.avatarUrl} alt="" className="w-full h-full object-cover" /> : <UserIcon size={16} className="m-3 text-white/10" />}
+      </div>
+      <div className="flex-1 min-w-0">
+        <div className="text-sm font-serif text-white/90 truncate">{user.username}</div>
+        <div className="text-[8px] uppercase tracking-widest text-white/20">Sanctuary Member</div>
+      </div>
+      <ChevronRight size={14} className="text-white/10 group-hover:text-white/40 transition-colors" />
+    </button>
+  );
+};
+
+interface ProfileViewProps {
+  userId: string;
+  onClose: () => void;
+  onSelectPost: (post: Post) => void;
+  currentUser: User | null;
+  onStartWhisper: (userId: string) => void;
+  onUpdateUser: (user: User) => void;
+  setViewedProfileId: (id: string | null) => void;
+  allUsers: User[];
+}
+
 const ProfileView = ({ 
   userId, 
   onClose, 
   onSelectPost,
   currentUser,
   onStartWhisper,
-  onUpdateUser
-}: { 
-  userId: string; 
-  onClose: () => void; 
-  onSelectPost: (post: Post) => void;
-  currentUser: User | null;
-  onStartWhisper: (userId: string) => void;
-  onUpdateUser: (user: User) => void;
-}) => {
+  onUpdateUser,
+  setViewedProfileId,
+  allUsers
+}: ProfileViewProps) => {
   const [profileUser, setProfileUser] = useState<User | null>(null);
   const [userPosts, setUserPosts] = useState<Post[]>([]);
   const [isEditingProfile, setIsEditingProfile] = useState(false);
@@ -590,6 +625,7 @@ const ProfileView = ({
   const [isSaving, setIsSaving] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showFollowersList, setShowFollowersList] = useState<'followers' | 'following' | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -734,9 +770,25 @@ const ProfileView = ({
           </div>
           <div className="flex-1">
             <h2 className="text-2xl md:text-3xl font-serif">{profileUser.username}</h2>
-            <p className="text-[10px] uppercase tracking-widest text-white/30 mt-1">
-              Joined {new Date(profileUser.joinDate).toLocaleDateString()}
-            </p>
+            <div className="flex items-center gap-4 mt-2">
+              <div className="text-[10px] uppercase tracking-widest text-white/30">
+                Joined {new Date(profileUser.joinDate).toLocaleDateString()}
+              </div>
+              <div className="h-1 w-1 rounded-full bg-white/10" />
+              <button 
+                onClick={() => setShowFollowersList('followers')}
+                className="text-[10px] uppercase tracking-widest text-white/60 hover:text-white transition-colors"
+              >
+                <span className="font-serif text-white mr-1">{profileUser.followers?.length || 0}</span> Followers
+              </button>
+              <div className="h-1 w-1 rounded-full bg-white/10" />
+              <button 
+                onClick={() => setShowFollowersList('following')}
+                className="text-[10px] uppercase tracking-widest text-white/60 hover:text-white transition-colors"
+              >
+                <span className="font-serif text-white mr-1">{profileUser.following?.length || 0}</span> Following
+              </button>
+            </div>
           </div>
           
           {currentUser && currentUser.id !== userId && (
@@ -881,6 +933,38 @@ const ProfileView = ({
             )}
           </div>
         </div>
+
+        {/* Followers/Following Modal Overlay */}
+        <AnimatePresence>
+          {showFollowersList && (
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="absolute inset-0 z-[120] bg-black/95 backdrop-blur-xl p-8 flex flex-col"
+            >
+              <div className="flex items-center justify-between mb-8">
+                <h3 className="text-xl font-serif italic capitalize">{showFollowersList}</h3>
+                <button onClick={() => setShowFollowersList(null)} className="text-white/40 hover:text-white">
+                  <X size={20} />
+                </button>
+              </div>
+              <div className="flex-1 overflow-y-auto space-y-4 pr-2 scrollbar-hide">
+                {(showFollowersList === 'followers' ? profileUser.followers : profileUser.following)?.length ? (
+                  (showFollowersList === 'followers' ? profileUser.followers : profileUser.following)?.map(id => {
+                    // Note: We need allUsers to find the user details
+                    // Since allUsers is not in scope, we'll need to pass it or fetch it
+                    // For now, I'll assume we have access to a global users list or similar
+                    // Actually, I should probably pass allUsers to ProfileView
+                    return <SoulListItem key={id} userId={id} onSelect={() => setShowFollowersList(null)} setViewedProfileId={setViewedProfileId} allUsers={allUsers} />;
+                  })
+                ) : (
+                  <p className="text-white/20 italic text-center py-12">No souls found here.</p>
+                )}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </motion.div>
     </motion.div>
   );
@@ -1626,8 +1710,10 @@ export default function App() {
             onClose={() => setViewedProfileId(null)}
             onSelectPost={setSelectedPost}
             currentUser={user}
-            onStartWhisper={(id) => { setActiveChatUserId(id); setActiveTab('profile'); }}
+            onStartWhisper={(id) => { setActiveChatUserId(id); setActiveTab('messages'); setViewedProfileId(null); }}
             onUpdateUser={setUser}
+            setViewedProfileId={setViewedProfileId}
+            allUsers={allUsers}
           />
         )}
       </AnimatePresence>
@@ -1749,7 +1835,7 @@ export default function App() {
           
           {/* Left Panel: Identity */}
           {!isZenMode && (
-            <aside className="hidden lg:flex flex-col fixed left-8 top-0 w-64 h-screen pt-32 space-y-6 overflow-y-auto scrollbar-hide shrink-0 pb-24 px-6">
+            <aside className="hidden lg:flex flex-col sticky top-0 w-64 h-screen pt-32 space-y-6 overflow-y-auto scrollbar-hide shrink-0 pb-24 px-4">
               <div className="bg-white/[0.03] backdrop-blur-md border border-white/10 rounded-3xl p-6 space-y-6">
                 <div className="flex flex-col items-center text-center space-y-4">
                   <div className="w-20 h-20 rounded-full bg-white/5 border border-white/10 overflow-hidden relative group">
@@ -1849,7 +1935,7 @@ export default function App() {
           )}
 
           {/* Main Feed */}
-          <section className={`flex-1 pt-32 pb-40 px-4 md:px-6 transition-all duration-700 ${isZenMode ? 'max-w-4xl mx-auto' : 'lg:ml-72 xl:mr-80'}`}>
+          <section className={`flex-1 pt-32 pb-40 px-4 md:px-6 transition-all duration-700 ${isZenMode ? 'max-w-4xl mx-auto' : ''}`}>
           {/* Ripple Overlay */}
           {ripple && (
             <div 
@@ -1861,9 +1947,9 @@ export default function App() {
           {/* Tab Views */}
           <div className="w-full">
             <AnimatePresence mode="wait">
-              {activeTab === 'home' && (
+              {searchQuery.trim() ? (
                 <motion.div
-                  key="home"
+                  key="search-results"
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -10 }}
@@ -1872,19 +1958,22 @@ export default function App() {
                   <div className="w-full flex items-center justify-between px-2 md:px-4 py-8">
                     <div className="flex flex-col gap-1">
                       <h2 className="text-2xl font-serif italic text-white/80">
-                        {searchQuery ? `Echoes matching "${searchQuery}"` : "What others are feeling today"}
+                        Echoes matching "{searchQuery}"
                       </h2>
                       <div className="flex items-center gap-3 text-[9px] uppercase tracking-[0.3em] text-white/20">
                         <div className={`w-1.5 h-1.5 rounded-full ${currentTheme.bg} border ${currentTheme.accent} animate-pulse`} />
-                        <span>{searchQuery ? 'Global Search' : (selectedCategory || 'The Sanctuary')}</span>
+                        <span>Global Search</span>
                       </div>
                     </div>
-                    <div className="text-[9px] uppercase tracking-[0.3em] text-white/20">
-                      {new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric' })}
-                    </div>
+                    <button 
+                      onClick={() => setSearchQuery('')}
+                      className="text-[9px] uppercase tracking-[0.3em] text-white/20 hover:text-white transition-colors"
+                    >
+                      Clear Search
+                    </button>
                   </div>
 
-                  {searchQuery && searchedUsers.length > 0 && (
+                  {searchedUsers.length > 0 && (
                     <div className="space-y-6 mb-12">
                       <h3 className="text-[10px] uppercase tracking-[0.4em] text-white/20 border-b border-white/5 pb-4">Souls Found</h3>
                       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -1918,6 +2007,139 @@ export default function App() {
                           transition={{ duration: 0.6, delay: Math.min(idx * 0.05, 0.2) }}
                           className="w-full"
                         >
+                          {/* Post rendering logic (copy-pasted from below) */}
+                          <div className="w-full relative group">
+                            <div className={`w-full bg-white/[0.02] backdrop-blur-md border border-white/5 rounded-[2rem] p-6 md:p-8 relative overflow-hidden transition-all duration-500 hover:bg-white/[0.04] hover:border-white/10 ${expandedPostId === post.id ? 'ring-1 ring-white/10' : ''}`}>
+                              <div className="relative z-10 space-y-5">
+                                <div className="flex items-center justify-between text-[9px] uppercase tracking-[0.3em] text-white/20">
+                                  <div className="flex items-center gap-3">
+                                    <span className="text-white/40">{post.category}</span>
+                                    {user?.savedPosts?.includes(post.id) && <Bookmark size={10} className="text-white/60" />}
+                                  </div>
+                                  
+                                  <div className="flex items-center gap-4">
+                                    <button 
+                                      onClick={() => !post.isAnonymous && setViewedProfileId(post.userId)}
+                                      className={`flex items-center gap-2 transition-all ${post.isAnonymous ? 'cursor-default' : 'hover:text-white group/author'}`}
+                                    >
+                                      <div className="w-5 h-5 rounded-full bg-white/5 border border-white/5 overflow-hidden flex items-center justify-center">
+                                        {!post.isAnonymous && post.avatarUrl ? (
+                                          <img src={post.avatarUrl} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                                        ) : (
+                                          <UserIcon size={8} className="text-white/20" />
+                                        )}
+                                      </div>
+                                      <span className="text-[10px] tracking-wider">{post.isAnonymous ? 'Shadow' : post.username}</span>
+                                    </button>
+
+                                    {user?.id === post.userId && (
+                                      <div className="flex items-center gap-3">
+                                        <button onClick={() => { setSelectedPost(post); setWritingType('post'); setIsEditingPost(true); }} className="hover:text-white transition-colors">Edit</button>
+                                        <button onClick={() => { setSelectedPost(post); handleDeletePost(); }} className="hover:text-red-400 transition-colors">Delete</button>
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+
+                                <div 
+                                  className={`poetry-content text-lg md:text-xl lg:text-2xl leading-relaxed italic font-serif text-white/80 cursor-pointer transition-all duration-500 ${expandedPostId === post.id ? '' : 'line-clamp-2'}`}
+                                  onClick={() => setExpandedPostId(expandedPostId === post.id ? null : post.id)}
+                                >
+                                  {post.type === 'quote' && <Quote className="mb-4 opacity-5" size={20} />}
+                                  {post.content}
+                                </div>
+
+                                <div className="pt-4 flex items-center justify-between border-t border-white/5">
+                                  <div className="flex gap-6">
+                                    {(['felt', 'heavy', 'beautiful', 'haunting'] as const).map(type => {
+                                      const count = reactions.filter(r => r.postId === post.id && r.type === type).length;
+                                      const hasReacted = reactions.some(r => r.postId === post.id && r.type === type && r.userId === user?.id);
+                                      return (
+                                        <button 
+                                          key={type}
+                                          onClick={(e) => { setSelectedPost(post); handleReaction(post.id, type, e); }}
+                                          className={`flex items-center gap-2 transition-all ${hasReacted ? 'text-white' : 'text-white/10 hover:text-white/30'}`}
+                                          title={`${count} people ${type} this`}
+                                        >
+                                          <Heart size={14} className={hasReacted ? 'fill-white' : ''} />
+                                          <span className="text-[10px] tracking-widest">{count}</span>
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                  
+                                  <div className="flex gap-4">
+                                    <button 
+                                      onClick={() => handleToggleSave(post.id)}
+                                      className={`p-2 rounded-full transition-all ${user?.savedPosts?.includes(post.id) ? 'text-white bg-white/10' : 'text-white/20 hover:text-white/40'}`}
+                                    >
+                                      <Bookmark size={14} fill={user?.savedPosts?.includes(post.id) ? 'currentColor' : 'none'} />
+                                    </button>
+                                    <button 
+                                      onClick={() => { setSelectedPost(post); setWritingType('reflection'); setIsWriting(true); }}
+                                      className="flex items-center gap-2 px-4 py-2 rounded-full bg-white/5 border border-white/10 text-white/40 hover:text-white hover:bg-white/10 transition-all"
+                                    >
+                                      <MessageSquare size={14} />
+                                      <span className="text-[10px] uppercase tracking-widest">Reflect</span>
+                                    </button>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        </motion.div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="h-full flex flex-col items-center justify-center text-center py-32 space-y-4">
+                      <div className="w-16 h-16 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-white/10">
+                        <Search size={24} />
+                      </div>
+                      <div className="space-y-1">
+                        <p className="text-white/40 font-serif italic text-xl">
+                          No echoes found for "{searchQuery}"
+                        </p>
+                        <p className="text-[10px] uppercase tracking-widest text-white/10">Try a different whisper or soul</p>
+                      </div>
+                    </div>
+                  )}
+                </motion.div>
+              ) : (
+                <>
+                  {activeTab === 'home' && (
+                    <motion.div
+                      key="home"
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -10 }}
+                      className="space-y-12"
+                    >
+                      <div className="w-full flex items-center justify-between px-2 md:px-4 py-8">
+                        <div className="flex flex-col gap-1">
+                          <h2 className="text-2xl font-serif italic text-white/80">
+                            What others are feeling today
+                          </h2>
+                          <div className="flex items-center gap-3 text-[9px] uppercase tracking-[0.3em] text-white/20">
+                            <div className={`w-1.5 h-1.5 rounded-full ${currentTheme.bg} border ${currentTheme.accent} animate-pulse`} />
+                            <span>{selectedCategory || 'The Sanctuary'}</span>
+                          </div>
+                        </div>
+                        <div className="text-[9px] uppercase tracking-[0.3em] text-white/20">
+                          {new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric' })}
+                        </div>
+                      </div>
+
+                      {filteredPosts.length > 0 ? (
+                        <div className="space-y-12">
+                          {filteredPosts.map((post, idx) => (
+                            <motion.div 
+                              key={post.id}
+                              initial={{ opacity: 0, y: 20 }}
+                              whileInView={{ opacity: 1, y: 0 }}
+                              viewport={{ once: true, margin: "-50px" }}
+                              transition={{ duration: 0.6, delay: Math.min(idx * 0.05, 0.2) }}
+                              className="w-full"
+                            >
                           <div className="w-full relative group">
                             <div className={`w-full bg-white/[0.02] backdrop-blur-md border border-white/5 rounded-[2rem] p-6 md:p-8 relative overflow-hidden transition-all duration-500 hover:bg-white/[0.04] hover:border-white/10 ${expandedPostId === post.id ? 'ring-1 ring-white/10' : ''}`}>
                               <div className="relative z-10 space-y-5">
@@ -2100,7 +2322,7 @@ export default function App() {
                   <h2 className="text-3xl font-serif italic text-white/80">Sanctuary Whispers</h2>
                   <p className="text-xs uppercase tracking-[0.3em] text-white/20">Private echoes between souls</p>
                 </div>
-                <div className="flex flex-col md:flex-row gap-4 md:gap-6 h-[650px] max-w-5xl mx-auto overflow-hidden">
+                <div className="flex flex-col md:flex-row gap-4 md:gap-6 h-[650px] w-full overflow-hidden">
                   {/* Chat List */}
                   <div className={`w-full md:transition-all md:duration-500 ${activeChatUserId ? 'md:w-[80px]' : 'md:w-[320px]'} space-y-3 overflow-y-auto pr-2 scrollbar-hide border-r border-white/5 ${activeChatUserId ? 'hidden md:block' : 'block'}`}>
                     {getChatPartners().length > 0 ? (
@@ -2548,13 +2770,15 @@ export default function App() {
                 </div>
               </motion.div>
             )}
-          </AnimatePresence>
-          </div>
-        </section>
+          </>
+        )}
+      </AnimatePresence>
+    </div>
+  </section>
 
         {/* Right Panel: Ambient Life */}
         {!isZenMode && (
-          <aside className="hidden xl:flex flex-col w-80 h-full pt-32 space-y-8 overflow-y-auto scrollbar-hide shrink-0 px-6 pb-24">
+          <aside className="hidden xl:flex flex-col sticky top-0 w-80 h-screen pt-32 space-y-8 overflow-y-auto scrollbar-hide shrink-0 px-6 pb-24">
             {/* Most Felt Today */}
             <div className="bg-white/[0.03] backdrop-blur-md border border-white/10 rounded-3xl p-6 space-y-6">
               <div className="flex items-center gap-3 text-[10px] uppercase tracking-[0.3em] text-white/40">
