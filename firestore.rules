@@ -165,6 +165,7 @@ service cloud.firestore {
       allow read: if true;
       allow create: if isAuthenticated() && isValidMessage(request.resource.data);
       allow update: if isMessageParticipant() && hasOnlyAllowedFields(['id', 'senderId', 'receiverId', 'content', 'createdAt', 'isRead']) && (request.resource.data.isRead == true);
+      allow delete: if isMessageParticipant();
     }
 
     match /notifications/{notificationId} {

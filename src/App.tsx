@@ -1321,13 +1321,23 @@ export default function App() {
 
   const handleClearChat = async () => {
     if (!user || !activeChatUserId) return;
+    console.log("handleClearChat triggered for partner:", activeChatUserId);
     setConfirmModal({
       isOpen: true,
       title: 'Clear Whispers',
       message: 'Are you sure you want to clear these whispers? They will be lost to the void.',
       onConfirm: async () => {
-        await storage.clearConversation(user.id, activeChatUserId);
-        setConfirmModal(prev => ({ ...prev, isOpen: false }));
+        console.log("Clear Whispers confirmed");
+        try {
+          await storage.clearConversation(user.id, activeChatUserId);
+          console.log("Clear Whispers successful");
+          // Close the chat window to show it's been cleared
+          setActiveChatUserId(null);
+        } catch (err) {
+          console.error("Clear Whispers failed:", err);
+        } finally {
+          setConfirmModal(prev => ({ ...prev, isOpen: false }));
+        }
       }
     });
   };
@@ -1832,7 +1842,7 @@ export default function App() {
           )}
 
           {/* Main Feed */}
-          <section className={`flex-1 pt-32 pb-40 px-6 transition-all duration-700 ${isZenMode ? 'max-w-4xl mx-auto' : 'lg:ml-72 xl:mr-96'}`}>
+          <section className={`flex-1 pt-32 pb-40 px-6 transition-all duration-700 ${isZenMode ? 'max-w-4xl mx-auto' : activeTab === 'messages' ? 'lg:ml-72 xl:mr-12' : 'lg:ml-72 xl:mr-96'}`}>
           {/* Ripple Overlay */}
           {ripple && (
             <div 
@@ -2050,9 +2060,9 @@ export default function App() {
                   <h2 className="text-3xl font-serif italic text-white/80">Sanctuary Whispers</h2>
                   <p className="text-xs uppercase tracking-[0.3em] text-white/20">Private echoes between souls</p>
                 </div>
-                <div className="flex flex-col md:flex-row gap-6 h-[700px]">
+                <div className="flex flex-col md:flex-row gap-6 h-[750px]">
                   {/* Chat List */}
-                  <div className={`w-full md:w-[400px] space-y-2 overflow-y-auto pr-2 scrollbar-hide border-r border-white/5 ${activeChatUserId ? 'hidden md:block' : 'block'}`}>
+                  <div className={`w-full md:transition-all md:duration-500 ${activeChatUserId ? 'md:w-[80px]' : 'md:w-[400px]'} space-y-2 overflow-y-auto pr-2 scrollbar-hide border-r border-white/5 ${activeChatUserId ? 'hidden md:block' : 'block'}`}>
                     {getChatPartners().length > 0 ? (
                       getChatPartners().map(partnerId => {
                         const partner = allUsers.find(u => u.id === partnerId);
@@ -2064,12 +2074,13 @@ export default function App() {
                           <button
                             key={partnerId}
                             onClick={() => setActiveChatUserId(partnerId)}
-                            className={`w-full p-6 rounded-2xl border transition-all text-left flex items-center gap-6 ${activeChatUserId === partnerId ? 'bg-white/10 border-white/20' : 'bg-white/5 border-white/5 hover:bg-white/10'}`}
+                            className={`w-full p-4 md:p-6 rounded-2xl border transition-all text-left flex items-center gap-4 md:gap-6 ${activeChatUserId === partnerId ? 'bg-white/10 border-white/20' : 'bg-white/5 border-white/5 hover:bg-white/10'} ${activeChatUserId && activeChatUserId !== partnerId ? 'md:opacity-40 hover:opacity-100' : ''}`}
+                            title={partner?.username}
                           >
                             <div className="w-12 h-12 rounded-full bg-white/5 border border-white/10 overflow-hidden flex items-center justify-center shrink-0">
                               {partner?.avatarUrl ? <img src={partner.avatarUrl} alt="" className="w-full h-full object-cover" /> : <UserIcon size={20} className="text-white/40" />}
                             </div>
-                            <div className="flex-1 min-w-0">
+                            <div className={`flex-1 min-w-0 ${activeChatUserId ? 'md:hidden' : 'block'}`}>
                               <div className="flex justify-between items-start mb-2 gap-2">
                                 <div className="text-sm font-medium text-white/90 truncate pr-2">{partner?.username || `Soul`}</div>
                                 {lastMsg && (

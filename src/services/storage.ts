@@ -7,6 +7,7 @@ import {
   getDocs, 
   updateDoc, 
   deleteDoc, 
+  writeBatch,
   query, 
   where, 
   orderBy, 
@@ -244,7 +245,6 @@ export const storage = {
 
   clearConversation: async (userId: string, partnerId: string) => {
     try {
-      // Split into two queries to avoid potential 'or' index requirements
       const q1 = query(
         collection(db, 'messages'),
         where('senderId', '==', userId),
@@ -257,8 +257,16 @@ export const storage = {
       );
       
       const [snap1, snap2] = await Promise.all([getDocs(q1), getDocs(q2)]);
-      const batch = [...snap1.docs, ...snap2.docs].map(d => deleteDoc(doc(db, 'messages', d.id)));
-      await Promise.all(batch);
+      const allDocs = [...snap1.docs, ...snap2.docs];
+      
+      if (allDocs.length === 0) return;
+
+      const batch = writeBatch(db);
+      allDocs.forEach(d => {
+        batch.delete(doc(db, 'messages', d.id));
+      });
+      await batch.commit();
+      console.log(`Cleared ${allDocs.length} messages`);
     } catch (e) {
       handleFirestoreError(e, OperationType.DELETE, `messages/clear/${partnerId}`);
     }
