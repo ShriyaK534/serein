@@ -192,7 +192,13 @@ export const storage = {
     try {
       console.log("storage.saveReflection called for:", reflection.id);
       const ref = doc(db, 'reflections', reflection.id);
-      await setDoc(ref, reflection);
+      
+      // Sanitize object to remove undefined fields which Firestore doesn't support
+      const sanitizedReflection = Object.fromEntries(
+        Object.entries(reflection).filter(([_, v]) => v !== undefined)
+      );
+      
+      await setDoc(ref, sanitizedReflection);
       console.log("storage.saveReflection success");
     } catch (e) {
       console.error("storage.saveReflection error:", e);

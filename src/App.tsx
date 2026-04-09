@@ -1107,7 +1107,8 @@ export default function App() {
   }, [posts, selectedCategory]);
 
   const searchedPosts = useMemo(() => {
-    let result = filteredPosts;
+    // If searching, search across all posts, otherwise respect category filter
+    let result = searchQuery.trim() ? posts : filteredPosts;
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
       result = result.filter(p => 
@@ -1117,7 +1118,13 @@ export default function App() {
       );
     }
     return result;
-  }, [filteredPosts, searchQuery]);
+  }, [posts, filteredPosts, searchQuery]);
+
+  const searchedUsers = useMemo(() => {
+    if (!searchQuery.trim()) return [];
+    const q = searchQuery.toLowerCase();
+    return allUsers.filter(u => u.username.toLowerCase().includes(q));
+  }, [allUsers, searchQuery]);
 
   const suggestedSouls = useMemo(() => {
     if (!user) return allUsers.slice(0, 3);
@@ -1738,7 +1745,7 @@ export default function App() {
 
       {/* Main Sanctuary Content */}
       <main className={`min-h-screen w-full relative ${isZenMode ? 'bg-[#030303]' : ''}`}>
-        <div className="max-w-[1600px] mx-auto flex relative px-6 min-h-screen">
+        <div className="max-w-[1800px] mx-auto flex relative px-4 md:px-6 min-h-screen">
           
           {/* Left Panel: Identity */}
           {!isZenMode && (
@@ -1842,7 +1849,7 @@ export default function App() {
           )}
 
           {/* Main Feed */}
-          <section className={`flex-1 pt-32 pb-40 px-6 transition-all duration-700 ${isZenMode ? 'max-w-4xl mx-auto' : 'lg:ml-72 xl:mr-96'}`}>
+          <section className={`flex-1 pt-32 pb-40 px-4 md:px-6 transition-all duration-700 ${isZenMode ? 'max-w-4xl mx-auto' : 'lg:ml-72 xl:mr-80'}`}>
           {/* Ripple Overlay */}
           {ripple && (
             <div 
@@ -1862,18 +1869,43 @@ export default function App() {
                   exit={{ opacity: 0, y: -10 }}
                   className="space-y-12"
                 >
-                  <div className="w-full flex items-center justify-between px-4 py-8">
+                  <div className="w-full flex items-center justify-between px-2 md:px-4 py-8">
                     <div className="flex flex-col gap-1">
-                      <h2 className="text-2xl font-serif italic text-white/80">What others are feeling today</h2>
+                      <h2 className="text-2xl font-serif italic text-white/80">
+                        {searchQuery ? `Echoes matching "${searchQuery}"` : "What others are feeling today"}
+                      </h2>
                       <div className="flex items-center gap-3 text-[9px] uppercase tracking-[0.3em] text-white/20">
                         <div className={`w-1.5 h-1.5 rounded-full ${currentTheme.bg} border ${currentTheme.accent} animate-pulse`} />
-                        <span>{selectedCategory || 'The Sanctuary'}</span>
+                        <span>{searchQuery ? 'Global Search' : (selectedCategory || 'The Sanctuary')}</span>
                       </div>
                     </div>
                     <div className="text-[9px] uppercase tracking-[0.3em] text-white/20">
                       {new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric' })}
                     </div>
                   </div>
+
+                  {searchQuery && searchedUsers.length > 0 && (
+                    <div className="space-y-6 mb-12">
+                      <h3 className="text-[10px] uppercase tracking-[0.4em] text-white/20 border-b border-white/5 pb-4">Souls Found</h3>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                        {searchedUsers.map(soul => (
+                          <button 
+                            key={soul.id}
+                            onClick={() => setViewedProfileId(soul.id)}
+                            className="bg-white/[0.03] border border-white/10 p-5 rounded-2xl flex items-center gap-4 hover:bg-white/10 transition-all group text-left"
+                          >
+                            <div className="w-12 h-12 rounded-full bg-white/5 border border-white/10 overflow-hidden shrink-0">
+                              {soul.avatarUrl ? <img src={soul.avatarUrl} alt="" className="w-full h-full object-cover" /> : <UserIcon size={18} className="m-3 text-white/10" />}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="text-sm font-serif text-white/90 truncate">{soul.username}</div>
+                              <div className="text-[8px] uppercase tracking-widest text-white/20">Sanctuary Member</div>
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
 
                   {searchedPosts.length > 0 ? (
                     <div className="space-y-8">
@@ -2060,9 +2092,9 @@ export default function App() {
                   <h2 className="text-3xl font-serif italic text-white/80">Sanctuary Whispers</h2>
                   <p className="text-xs uppercase tracking-[0.3em] text-white/20">Private echoes between souls</p>
                 </div>
-                <div className="flex flex-col md:flex-row gap-6 h-[750px]">
+                <div className="flex flex-col md:flex-row gap-4 md:gap-8 h-[750px]">
                   {/* Chat List */}
-                  <div className={`w-full md:transition-all md:duration-500 ${activeChatUserId ? 'md:w-[80px]' : 'md:w-[400px]'} space-y-2 overflow-y-auto pr-2 scrollbar-hide border-r border-white/5 ${activeChatUserId ? 'hidden md:block' : 'block'}`}>
+                  <div className={`w-full md:transition-all md:duration-500 ${activeChatUserId ? 'md:w-[90px]' : 'md:w-[450px]'} space-y-3 overflow-y-auto pr-2 scrollbar-hide border-r border-white/5 ${activeChatUserId ? 'hidden md:block' : 'block'}`}>
                     {getChatPartners().length > 0 ? (
                       getChatPartners().map(partnerId => {
                         const partner = allUsers.find(u => u.id === partnerId);
@@ -2074,22 +2106,22 @@ export default function App() {
                           <button
                             key={partnerId}
                             onClick={() => setActiveChatUserId(partnerId)}
-                            className={`w-full p-4 md:p-6 rounded-2xl border transition-all text-left flex items-center gap-4 md:gap-6 ${activeChatUserId === partnerId ? 'bg-white/10 border-white/20' : 'bg-white/5 border-white/5 hover:bg-white/10'} ${activeChatUserId && activeChatUserId !== partnerId ? 'md:opacity-40 hover:opacity-100' : ''}`}
+                            className={`w-full p-5 md:p-7 rounded-3xl border transition-all text-left flex items-center gap-5 md:gap-7 ${activeChatUserId === partnerId ? 'bg-white/10 border-white/20 shadow-xl' : 'bg-white/5 border-white/5 hover:bg-white/10'} ${activeChatUserId && activeChatUserId !== partnerId ? 'md:opacity-40 hover:opacity-100' : ''}`}
                             title={partner?.username}
                           >
-                            <div className="w-12 h-12 rounded-full bg-white/5 border border-white/10 overflow-hidden flex items-center justify-center shrink-0">
-                              {partner?.avatarUrl ? <img src={partner.avatarUrl} alt="" className="w-full h-full object-cover" /> : <UserIcon size={20} className="text-white/40" />}
+                            <div className="w-14 h-14 rounded-full bg-white/5 border border-white/10 overflow-hidden flex items-center justify-center shrink-0 shadow-inner">
+                              {partner?.avatarUrl ? <img src={partner.avatarUrl} alt="" className="w-full h-full object-cover" /> : <UserIcon size={24} className="text-white/40" />}
                             </div>
                             <div className={`flex-1 min-w-0 ${activeChatUserId ? 'md:hidden' : 'block'}`}>
-                              <div className="flex justify-between items-start mb-2 gap-2">
-                                <div className="text-sm font-medium text-white/90 truncate pr-2">{partner?.username || `Soul`}</div>
+                              <div className="flex justify-between items-start mb-2.5 gap-3">
+                                <div className="text-base font-serif text-white/90 truncate pr-4">{partner?.username || `Soul`}</div>
                                 {lastMsg && (
-                                  <div className="text-[9px] text-white/20 whitespace-nowrap shrink-0 pt-0.5">
+                                  <div className="text-[10px] text-white/20 whitespace-nowrap shrink-0 pt-1">
                                     {new Date(lastMsg.createdAt).toLocaleDateString([], { month: 'short', day: 'numeric' })}
                                   </div>
                                 )}
                               </div>
-                              <div className="text-xs text-white/40 truncate">
+                              <div className="text-xs text-white/40 truncate leading-relaxed">
                                 {lastMsg?.content || "..."}
                               </div>
                             </div>
