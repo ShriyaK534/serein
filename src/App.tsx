@@ -1686,7 +1686,7 @@ export default function App() {
                 exit={{ height: 0, opacity: 0 }}
                 className="w-full bg-black/40 backdrop-blur-xl border-b border-white/5 pointer-events-auto overflow-hidden"
               >
-                <div className="max-w-xl mx-auto px-4 py-3 flex items-center gap-3">
+                <div className="max-w-4xl mx-auto px-4 py-3 flex items-center gap-3">
                   <Search size={14} className="text-white/30" />
                   <input
                     ref={searchInputRef}
@@ -1709,7 +1709,7 @@ export default function App() {
           {/* Category Filter - Responsive Scroll */}
           {!isZenMode && (
             <div className="w-full bg-black/40 backdrop-blur-xl border-b border-white/5 pointer-events-auto overflow-x-auto scrollbar-hide">
-              <div className="max-w-xl mx-auto px-4 py-3">
+              <div className="max-w-4xl mx-auto px-4 py-3">
                 <div className="flex items-center lg:justify-center gap-2 min-w-max">
                   <button 
                     onClick={() => setSelectedCategory(null)}
@@ -1745,7 +1745,7 @@ export default function App() {
 
       {/* Main Sanctuary Content */}
       <main className={`min-h-screen w-full relative ${isZenMode ? 'bg-[#030303]' : ''}`}>
-        <div className="max-w-[1800px] mx-auto flex relative px-4 md:px-6 min-h-screen">
+        <div className="max-w-[1600px] mx-auto flex relative px-4 md:px-6 min-h-screen">
           
           {/* Left Panel: Identity */}
           {!isZenMode && (
@@ -1849,7 +1849,7 @@ export default function App() {
           )}
 
           {/* Main Feed */}
-          <section className={`flex-1 pt-32 pb-40 px-4 md:px-6 transition-all duration-700 ${isZenMode ? 'max-w-4xl mx-auto' : 'lg:ml-72 xl:mr-80'}`}>
+          <section className={`flex-1 pt-32 pb-40 px-4 md:px-6 transition-all duration-700 ${isZenMode ? 'max-w-4xl mx-auto' : 'lg:ml-72'}`}>
           {/* Ripple Overlay */}
           {ripple && (
             <div 
@@ -1908,7 +1908,7 @@ export default function App() {
                   )}
 
                   {searchedPosts.length > 0 ? (
-                    <div className="space-y-8">
+                    <div className="space-y-12">
                       {searchedPosts.map((post, idx) => (
                         <motion.div 
                           key={post.id}
@@ -2036,8 +2036,16 @@ export default function App() {
                       ))}
                     </div>
                   ) : (
-                    <div className="h-full flex items-center justify-center text-white/10 italic font-serif text-xl py-32">
-                      The sky is clear. No rain yet.
+                    <div className="h-full flex flex-col items-center justify-center text-center py-32 space-y-4">
+                      <div className="w-16 h-16 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-white/10">
+                        <Search size={24} />
+                      </div>
+                      <div className="space-y-1">
+                        <p className="text-white/40 font-serif italic text-xl">
+                          {searchQuery ? `No echoes found for "${searchQuery}"` : "The sky is clear. No rain yet."}
+                        </p>
+                        <p className="text-[10px] uppercase tracking-widest text-white/10">Try a different whisper or soul</p>
+                      </div>
                     </div>
                   )}
                 </motion.div>
@@ -2092,9 +2100,9 @@ export default function App() {
                   <h2 className="text-3xl font-serif italic text-white/80">Sanctuary Whispers</h2>
                   <p className="text-xs uppercase tracking-[0.3em] text-white/20">Private echoes between souls</p>
                 </div>
-                <div className="flex flex-col md:flex-row gap-4 md:gap-8 h-[750px]">
+                <div className="flex flex-col md:flex-row gap-4 md:gap-6 h-[750px]">
                   {/* Chat List */}
-                  <div className={`w-full md:transition-all md:duration-500 ${activeChatUserId ? 'md:w-[90px]' : 'md:w-[450px]'} space-y-3 overflow-y-auto pr-2 scrollbar-hide border-r border-white/5 ${activeChatUserId ? 'hidden md:block' : 'block'}`}>
+                  <div className={`w-full md:transition-all md:duration-500 ${activeChatUserId ? 'md:w-[100px]' : 'md:w-[480px]'} space-y-3 overflow-y-auto pr-2 scrollbar-hide border-r border-white/5 ${activeChatUserId ? 'hidden md:block' : 'block'}`}>
                     {getChatPartners().length > 0 ? (
                       getChatPartners().map(partnerId => {
                         const partner = allUsers.find(u => u.id === partnerId);
