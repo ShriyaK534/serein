@@ -1849,7 +1849,7 @@ export default function App() {
           )}
 
           {/* Main Feed */}
-          <section className={`flex-1 pt-32 pb-40 px-4 md:px-6 transition-all duration-700 ${isZenMode ? 'max-w-4xl mx-auto' : 'lg:ml-72'}`}>
+          <section className={`flex-1 pt-32 pb-40 px-4 md:px-6 transition-all duration-700 ${isZenMode ? 'max-w-4xl mx-auto' : 'lg:ml-72 xl:mr-80'}`}>
           {/* Ripple Overlay */}
           {ripple && (
             <div 
@@ -2100,9 +2100,9 @@ export default function App() {
                   <h2 className="text-3xl font-serif italic text-white/80">Sanctuary Whispers</h2>
                   <p className="text-xs uppercase tracking-[0.3em] text-white/20">Private echoes between souls</p>
                 </div>
-                <div className="flex flex-col md:flex-row gap-4 md:gap-6 h-[750px]">
+                <div className="flex flex-col md:flex-row gap-4 md:gap-6 h-[650px] max-w-5xl mx-auto overflow-hidden">
                   {/* Chat List */}
-                  <div className={`w-full md:transition-all md:duration-500 ${activeChatUserId ? 'md:w-[100px]' : 'md:w-[480px]'} space-y-3 overflow-y-auto pr-2 scrollbar-hide border-r border-white/5 ${activeChatUserId ? 'hidden md:block' : 'block'}`}>
+                  <div className={`w-full md:transition-all md:duration-500 ${activeChatUserId ? 'md:w-[80px]' : 'md:w-[320px]'} space-y-3 overflow-y-auto pr-2 scrollbar-hide border-r border-white/5 ${activeChatUserId ? 'hidden md:block' : 'block'}`}>
                     {getChatPartners().length > 0 ? (
                       getChatPartners().map(partnerId => {
                         const partner = allUsers.find(u => u.id === partnerId);
